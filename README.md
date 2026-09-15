@@ -15,6 +15,7 @@ of glass, watch icons grow under the cursor, and let light drift across the
 whole thing.
 
 [![Latest release](https://img.shields.io/github/v/release/TheAgencyMGE/aero-dock?label=download&color=2f9de3)](https://github.com/TheAgencyMGE/aero-dock/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/TheAgencyMGE/aero-dock/total?label=downloads&color=145a9e)](https://github.com/TheAgencyMGE/aero-dock/releases)
 [![CI](https://github.com/TheAgencyMGE/aero-dock/actions/workflows/ci.yml/badge.svg)](https://github.com/TheAgencyMGE/aero-dock/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-7ad03a)](LICENSE)
 [![Platform: Windows](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0d3a5c)](#requirements)
