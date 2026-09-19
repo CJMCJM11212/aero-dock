@@ -91,6 +91,7 @@ pub fn run() {
             commands::dock::set_dock_focusable,
             commands::dock::set_taskbar_hidden,
             commands::dock::quit_app,
+            commands::dock::set_memory_saver,
             commands::windows_cmd::get_running,
             commands::windows_cmd::activate_window,
             commands::windows_cmd::minimize_window,

@@ -2,6 +2,7 @@ pub mod appaudio;
 pub mod apps;
 pub mod dock_window;
 pub mod icons;
+pub mod memory;
 pub mod monitors;
 pub mod recent;
 pub mod running;

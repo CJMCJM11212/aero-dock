@@ -236,8 +236,9 @@ with your Windows build.
 - Restoring a workspace gives a relaunched app about a second and a half
   to show a window. Anything slower keeps its own default geometry.
 - The installer is unsigned, so expect SmartScreen on first run.
-- Memory sits around 250MB, which is heavy for a dock. That is the cost of the
-  WebView2 rendering stack.
+- Memory sits around 180MB while you use it and about 140MB once it has been
+  left alone for a minute. That is still heavy for a dock, and nearly all of
+  it is the WebView2 rendering stack rather than the dock itself.
 
 ## Contributing
 

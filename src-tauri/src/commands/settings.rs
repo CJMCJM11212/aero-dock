@@ -138,15 +138,26 @@ pub async fn open_settings(app: AppHandle) -> AeroResult<()> {
         w.set_focus()?;
         return Ok(());
     }
-    tauri::WebviewWindowBuilder::new(
+    let builder = tauri::WebviewWindowBuilder::new(
         &app,
         "settings",
         tauri::WebviewUrl::App("index.html?window=settings".into()),
     )
     .title("Aero Dock Settings")
     .inner_size(820.0, 640.0)
-    .min_inner_size(660.0, 500.0)
-    .build()?;
+    .min_inner_size(660.0, 500.0);
+
+    // Every WebView2 window sharing a profile has to be created with the
+    // same browser arguments, or the second one fails to appear at all.
+    // The dock's come from tauri.conf.json, so read them from there rather
+    // than keeping a second copy that could drift.
+    #[cfg(windows)]
+    let builder = match dock_browser_args(&app) {
+        Some(args) => builder.additional_browser_args(&args),
+        None => builder,
+    };
+
+    builder.build()?;
     Ok(())
 }
 
@@ -161,4 +172,39 @@ pub fn import_settings(
         log::warn!("reposition after import failed: {e}");
     }
     Ok(result)
+}
+
+/// The browser arguments the dock window was configured with.
+#[cfg(windows)]
+fn dock_browser_args(app: &AppHandle) -> Option<String> {
+    app.config()
+        .app
+        .windows
+        .iter()
+        .find(|w| w.label == "dock")
+        .and_then(|w| w.additional_browser_args.clone())
+}
+
+#[cfg(test)]
+mod tests {
+    /// The browser arguments live in tauri.conf.json. Setting them there
+    /// replaces Tauri's own defaults rather than adding to them, so those
+    /// have to be repeated, and the GPU flag is what saves the memory.
+    #[test]
+    fn the_dock_keeps_tauris_defaults_and_renders_in_software() {
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../../tauri.conf.json")).unwrap();
+        let args = conf["app"]["windows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|w| w["label"] == "dock")
+            .and_then(|w| w["additionalBrowserArgs"].as_str())
+            .expect("the dock sets its browser arguments explicitly");
+        assert!(args.contains("msWebOOUI,msPdfOOUI,msSmartScreenProtection"), "{args}");
+        assert!(args.contains("--disable-gpu"), "{args}");
+        // a debugging port left in a shipped build lets any local process
+        // run script with the app's permissions
+        assert!(!args.contains("remote-debugging"), "{args}");
+    }
 }

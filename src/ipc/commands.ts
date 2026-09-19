@@ -36,6 +36,8 @@ export const ipc = {
   openSettings: () => invoke<void>("open_settings"),
   storageInfo: () => invoke<StorageInfo>("storage_info"),
   quitApp: () => invoke<void>("quit_app"),
+  /** Ask WebView2 to drop caches (true) or behave normally (false). */
+  setMemorySaver: (low: boolean) => invoke<void>("set_memory_saver", { low }),
 
   // apps
   listApps: () => invoke<AppEntry[]>("list_apps"),

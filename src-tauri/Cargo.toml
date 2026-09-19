@@ -1,6 +1,6 @@
 [package]
 name = "aero-dock"
-version = "1.2.0"
+version = "1.2.1"
 description = "Aero Dock - a free RocketDock alternative for Windows, in Frutiger Aero"
 authors = ["Ryan Panda"]
 license = "MIT"
@@ -27,6 +27,13 @@ thiserror = "2"
 parking_lot = "0.12"
 log = "0.4"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "bmp"] }
+
+# The WebView2 bindings Tauri itself is built on, pinned to the same
+# versions wry already pulls in, so nothing new is downloaded. Needed to
+# reach ICoreWebView2_19, which Tauri does not wrap.
+[target.'cfg(windows)'.dependencies]
+webview2-com = "0.38"
+windows-core-061 = { package = "windows-core", version = "0.61" }
 
 [target.'cfg(windows)'.dependencies.windows]
 version = "0.62"

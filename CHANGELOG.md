@@ -5,6 +5,21 @@ All notable changes to Aero Dock are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2026-09-18
+
+### Changed
+
+- Uses much less memory. Measured on the same machine, the dock went from
+  about 240 MB to about 180 MB while in use, and to about 140 MB once it
+  has been left alone for a minute.
+- The dock now renders in software. The GPU process was the single largest
+  cost, and most of it was cache. In testing this made no measurable
+  difference to CPU use, to the transparent window, or to the ripples, bursts
+  and ambient scenes, which still run.
+- After 45 seconds with no interaction the dock asks WebView2 to drop its
+  caches, and goes back to normal the moment the cursor returns. A WebView2
+  runtime too old to support this just keeps its caches, as before.
+
 ## [1.2.0] - 2026-09-08
 
 Modes, and the two things a mode is made of.
@@ -146,6 +161,7 @@ First public release.
 - Packaged (UWP) apps are grouped by AppUserModelID. This covers the common
   cases and misses a few. See the README.
 
+[1.2.1]: https://github.com/TheAgencyMGE/aero-dock/releases/tag/v1.2.1
 [1.2.0]: https://github.com/TheAgencyMGE/aero-dock/releases/tag/v1.2.0
 [1.1.0]: https://github.com/TheAgencyMGE/aero-dock/releases/tag/v1.1.0
 [1.0.1]: https://github.com/TheAgencyMGE/aero-dock/releases/tag/v1.0.1

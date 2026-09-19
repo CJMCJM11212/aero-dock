@@ -160,3 +160,28 @@ mod tests {
         assert_eq!(y, (1392 - 800) / 2);
     }
 }
+
+/// Trim or restore the calling window's memory. The dock calls this with
+/// `true` when it goes to sleep after a spell with no interaction, and
+/// with `false` the moment the cursor comes back.
+///
+/// Best effort by design: an old WebView2 runtime without the API just
+/// keeps its caches, which is what it did before this existed.
+#[tauri::command]
+pub fn set_memory_saver(webview: tauri::Webview, low: bool) {
+    #[cfg(windows)]
+    {
+        let result = webview.with_webview(move |platform| {
+            if let Err(e) =
+                crate::platform::windows::memory::set_memory_target(&platform.controller(), low)
+            {
+                log::debug!("memory target not applied: {e}");
+            }
+        });
+        if let Err(e) = result {
+            log::debug!("could not reach the webview: {e}");
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = (webview, low);
+}
