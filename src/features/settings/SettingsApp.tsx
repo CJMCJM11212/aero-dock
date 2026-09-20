@@ -6,6 +6,7 @@
 
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { useEffect, useRef, useState } from "react";
+import { useLiquidGlass } from "../../engine/glass/useLiquidGlass";
 import { applyAppearance } from "../../engine/themes/applyTheme";
 import { THEMES } from "../../engine/themes/themes";
 import { ipc } from "../../ipc/commands";
@@ -60,6 +61,9 @@ export function SettingsApp() {
   useEffect(() => {
     if (settings) applyAppearance(settings, null, "settings");
   }, [settings]);
+
+  // the refracting backdrop, sized per card
+  useLiquidGlass(settings?.appearance.settingsSurface === "liquid");
 
   // The window paints its sky immediately; this is what fills it until
   // settings arrive from Rust (or says so if they never do).

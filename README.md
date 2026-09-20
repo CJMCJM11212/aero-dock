@@ -89,9 +89,10 @@ Its last release was 2008.
 **Appearance**
 
 - Six themes: Aero, Ocean, Forest, Aurora, Sunset, Night
-- Two glass materials: Classic, the glossy Aero panel, and Liquid, the
-  same palette rendered as thin glass. Set per window, so the dock and
-  settings can differ
+- Two glass materials: Classic, the glossy Aero panel, and Liquid, thin
+  glass that refracts what is behind it. Set per window, so the dock and
+  settings can differ. The dock is a transparent window, so it gets the
+  rim and the transparency but cannot bend the desktop behind it
 - Optional wallpaper colour sync
 - Ambient scenes behind the dock: dust, rain, snow, bubbles, aurora
 - Sliders for glass, bloom, reflections, particles, opacity, speed

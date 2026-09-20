@@ -5,6 +5,30 @@ All notable changes to Aero Dock are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.2] - 2026-09-20
+
+### Changed
+
+- The Liquid material now actually refracts. It bends what is behind it
+  through a generated displacement map rather than only blurring, which is
+  the difference between glass and frosted plastic. Technique from
+  "Liquid Glass in CSS and SVG" by ekino.
+- Cards in the settings window carry the refraction, and the bubbles
+  behind them are larger so there is something worth bending. Bending a
+  smooth gradient only produces another smooth gradient.
+- Under Liquid the bubbles hold still and the travelling light sweep stands
+  down. Anything moving behind a refracting card forces it to redraw on
+  every frame, which costs more than the motion is worth.
+- The dock keeps the same rim treatment: one continuous inner glow instead
+  of a top bevel, no gloss cap, and more transparency.
+
+### Known limitation
+
+- The dock cannot refract. A backdrop filter can only bend what is painted
+  behind it inside the page, and the dock is a transparent window, so
+  Windows never hands it the desktop pixels. The dock gets the rim and the
+  transparency; the bending happens only in the settings window.
+
 ## [1.2.1] - 2026-09-18
 
 ### Changed
@@ -161,6 +185,7 @@ First public release.
 - Packaged (UWP) apps are grouped by AppUserModelID. This covers the common
   cases and misses a few. See the README.
 
+[1.2.2]: https://github.com/TheAgencyMGE/aero-dock/releases/tag/v1.2.2
 [1.2.1]: https://github.com/TheAgencyMGE/aero-dock/releases/tag/v1.2.1
 [1.2.0]: https://github.com/TheAgencyMGE/aero-dock/releases/tag/v1.2.0
 [1.1.0]: https://github.com/TheAgencyMGE/aero-dock/releases/tag/v1.1.0

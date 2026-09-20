@@ -109,20 +109,36 @@
  * because the rim, the corners and the missing gloss cap all carry over.
  */
 :root[data-surface="liquid"][data-window="dock"] {
-  --glass-tint-top: rgba(238, 249, 255, 0.44);
-  --glass-tint-mid: rgba(198, 232, 252, 0.36);
-  --glass-tint-bottom: rgba(142, 199, 238, 0.42);
+  --glass-tint-top: rgba(240, 250, 255, 0.34);
+  --glass-tint-mid: rgba(206, 236, 253, 0.27);
+  --glass-tint-bottom: rgba(150, 204, 240, 0.33);
   --glass-border: rgba(255, 255, 255, 0.72);
   --glass-border-dark: rgba(206, 236, 255, 0.4);
 }
 
 :root[data-surface="liquid"][data-window="dock"] .glass {
+  /* The reference signature is a single inner glow running the whole way
+     round rather than a top bevel, so the rim reads as thickness instead
+     of as a lit edge. Without a backdrop to refract, this ring plus the
+     veil is the entire material, so it carries more weight here than it
+     does on a settings card. */
   box-shadow:
     0 18px 44px rgba(4, 26, 48, 0.42),
     0 0 0 0.5px rgba(255, 255, 255, 0.34),
+    inset 0 0 6px 0 rgba(255, 255, 255, 0.85),
     inset 0 1px 0 rgba(255, 255, 255, 0.95),
-    inset 0 -1px 0 rgba(214, 240, 255, 0.45),
-    inset 0 -12px 30px rgba(150, 215, 255, 0.16);
+    inset 0 -14px 30px rgba(150, 215, 255, 0.14);
+}
+
+/* No hard gloss cap: that is the single thing that reads as plastic. */
+:root[data-surface="liquid"][data-window="dock"] .glass::before {
+  inset: 1px;
+  border-radius: inherit;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.2) 0%,
+    rgba(255, 255, 255, 0) 34%
+  );
 }
 
 /* Same reason: the small controls carry their own body on the dock. */
@@ -211,6 +227,31 @@
   border-radius: 22px;
 }
 
+/* Cards in the settings window get the real thing: a refracting backdrop
+   written inline by useLiquidGlass, sized to each card. Once the backdrop
+   is doing the work the body has to get out of its way, so the tint drops
+   to almost nothing and the rim becomes a single inner glow, which is what
+   the reference implementation uses. */
+:root[data-surface="liquid"] .settings-card.glass {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  box-shadow:
+    inset 0 0 5px 0 rgba(255, 255, 255, 0.92),
+    0 18px 44px rgba(4, 26, 48, 0.28);
+}
+
+/* The Vista gloss cap fights the refraction, so a card keeps only a
+   whisper of sheen at the very top. */
+:root[data-surface="liquid"] .settings-card.glass::before {
+  inset: 1px;
+  border-radius: inherit;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.16) 0%,
+    rgba(255, 255, 255, 0) 30%
+  );
+}
+
 :root[data-surface="liquid"] .mode-card,
 :root[data-surface="liquid"] .icon-picker-option,
 :root[data-surface="liquid"] .aero-menu-devices {
@@ -220,6 +261,42 @@
 
 :root[data-surface="liquid"] .icon-picker-option:hover {
   background: rgba(255, 255, 255, 0.24);
+}
+
+/* Refraction can only bend what is behind it, and a smooth gradient bends
+   into another smooth gradient. The bubbles are what give the glass
+   something to distort, so under this material they get bigger and a
+   little brighter. They are already the most Frutiger Aero thing in the
+   window, which is why they earn the room. */
+:root[data-surface="liquid"] .settings-bubble {
+  /* Still, and deliberately. Anything moving behind a refracting surface
+     forces every card above it to re-raster on every frame, and with a
+     displacement map in the stack that costs more than a whole CPU core.
+     Held in place the refraction is computed once and the glass still
+     bends them the moment you scroll. */
+  animation: none;
+  opacity: 0.5;
+  bottom: auto;
+  top: calc(4% + var(--i) * 17%);
+  width: calc(90px + var(--i) * 34px);
+  height: calc(90px + var(--i) * 34px);
+  border-color: rgba(255, 255, 255, 0.55);
+  background: radial-gradient(
+    circle at 32% 28%,
+    rgba(255, 255, 255, 0.92),
+    rgba(255, 255, 255, 0.18) 44%,
+    rgba(255, 255, 255, 0.03) 72%
+  );
+}
+
+/* The ambient light sweep travels across the glass forever. Behind a
+   refracting backdrop that is not a free flourish: every frame of it
+   re-rasters the filter on every card it crosses. A lens already plays
+   with light, so the sweep stands down here. */
+:root[data-surface="liquid"] .glass:not(.glass-open)::after,
+:root[data-surface="liquid"] .glass-sweep::after {
+  animation: none;
+  opacity: 0;
 }
 
 /* Text over a thinner material needs a touch more shadow to stay
