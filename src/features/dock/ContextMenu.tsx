@@ -9,7 +9,7 @@ import { ipc } from "../../ipc/commands";
 import { notify } from "../feedback/toastStore";
 import type { AudioDevice, Settings } from "../../ipc/types";
 import { exeKey, useAppAudio } from "../../state/audioStore";
-import type { DockItemView } from "../../state/dockStore";
+import { isBrowserBookmark, type DockItemView } from "../../state/dockStore";
 import { flyoutStyle, useMenu } from "./menuStore";
 import "./contextmenu.css";
 
@@ -73,6 +73,7 @@ async function unstack(settings: Settings, stackId: string): Promise<unknown> {
 
 function buildActions(item: DockItemView, settings: Settings): Action[] {
   const actions: Action[] = [];
+  const browserBookmark = isBrowserBookmark(item.target, item.args);
 
   // stacks have their own compact menu
   if (item.kind === "stack") {
@@ -90,17 +91,19 @@ function buildActions(item: DockItemView, settings: Settings): Action[] {
   }
 
   actions.push({
-    label: item.windows.length > 0 ? "새 창 열기" : "열기",
+    label: browserBookmark ? "북마크 열기" : item.windows.length > 0 ? "새 창 열기" : "열기",
     run: () => ipc.launch(item.target, item.args),
   });
-  actions.push({
-    label: "관리자 권한으로 실행",
-    run: () => ipc.launchAsAdmin(item.target, item.args),
-  });
-  actions.push({
-    label: "파일 위치 열기",
-    run: () => ipc.openFileLocation(item.target),
-  });
+  if (!browserBookmark) {
+    actions.push({
+      label: "관리자 권한으로 실행",
+      run: () => ipc.launchAsAdmin(item.target, item.args),
+    });
+    actions.push({
+      label: "파일 위치 열기",
+      run: () => ipc.openFileLocation(item.target),
+    });
+  }
 
   if (item.pinned) {
     actions.push({

@@ -174,7 +174,7 @@ export function DockIcon({
       ref={ref}
       className="dock-icon"
       data-dock-item={item.id}
-      whileTap={gamePaused ? undefined : { scale: 0.96 }}
+      whileTap={gamePaused || dragging ? undefined : { scale: 0.96 }}
       transition={gamePaused ? { duration: 0 } : { type: "spring", stiffness: 800, damping: 42, mass: 0.25 }}
       onClick={handleClick}
       onContextMenu={(e) => {
@@ -235,7 +235,7 @@ export function DockIcon({
           </motion.span>
         )
       )}
-      <motion.span className="dock-icon-float" data-solid-icon={!!item.iconSrc && solidIconSrc === item.iconSrc} style={{ scale: gamePaused ? 1 : scale }}>
+      <motion.span className="dock-icon-float" data-solid-icon={!!item.iconSrc && solidIconSrc === item.iconSrc} data-bookmark-icon={item.iconTarget === "aerodock:bookmark:instagram" ? "instagram" : undefined} style={{ scale: gamePaused ? 1 : scale }}>
         {item.kind === "stack" ? (
           <span className="dock-stack">
             {item.children.slice(0, 4).map((child, i) =>

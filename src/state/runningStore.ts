@@ -38,6 +38,11 @@ const APPS_FOLDER_PREFIX = "shell:appsfolder\\";
 /** Identity key for a window: AUMID for packaged apps (their exe is
  * always ApplicationFrameHost), exe path otherwise. */
 export function windowKey(w: WindowInfo): string {
+  // The Store-installed Codex desktop app reports a Win32 window without
+  // an AUMID, even though its stable launch target is an AppsFolder AUMID.
+  if (/\\WindowsApps\\OpenAI\.Codex_[^\\]+\\app\\ChatGPT\.exe$/i.test(w.exe)) {
+    return "aumid:openai.codex_2p2nqsd0c76g0!app";
+  }
   return w.aumid ? `aumid:${w.aumid.toLowerCase()}` : w.exe.toLowerCase();
 }
 

@@ -6,9 +6,22 @@
  */
 
 import { create } from "zustand";
+import instagramBookmarkIcon from "../assets/bookmark-icons/instagram.png";
+import threadsBookmarkIcon from "../assets/bookmark-icons/threads.png";
 import { ipc } from "../ipc/commands";
 import type { PinnedItem, WindowInfo } from "../ipc/types";
 import { exeDisplayName, targetKey, windowsByExe } from "./runningStore";
+
+export const BOOKMARK_ICONS = {
+  "aerodock:bookmark:instagram": instagramBookmarkIcon,
+  "aerodock:bookmark:threads": threadsBookmarkIcon,
+};
+
+/** A browser shortcut with a URL opens that bookmark on every click. */
+export function isBrowserBookmark(path: string, args?: string): boolean {
+  return /(?:^|\\)(?:whale|chrome|msedge|firefox)\.exe$/i.test(path)
+    && /https?:\/\/\S+/i.test(args ?? "");
+}
 
 export interface DockItemView {
   id: string;
@@ -41,7 +54,7 @@ interface IconState {
 }
 
 export const useDockIcons = create<IconState>((set, get) => ({
-  iconUrls: {},
+  iconUrls: { ...BOOKMARK_ICONS },
   pendingIcons: new Set(),
 
   resolveIcons: async (targets) => {
@@ -84,11 +97,12 @@ export function buildDockItems(
 ): DockItemView[] {
   const byExe = windowsByExe(runningWindows);
   const pinnedTargets = new Set(
-    pinned.filter((p) => p.path).map((p) => targetKey(p.path)),
+    pinned.filter((p) => p.path && !isBrowserBookmark(p.path, p.args)).map((p) => targetKey(p.path)),
   );
 
   const items: DockItemView[] = pinned.map((p) => {
-    const windows = p.path ? (byExe.get(targetKey(p.path)) ?? []) : [];
+    const windows = p.path && !isBrowserBookmark(p.path, p.args)
+      ? (byExe.get(targetKey(p.path)) ?? []) : [];
     return {
       id: p.id,
       name: p.name,

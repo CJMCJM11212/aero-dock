@@ -66,6 +66,16 @@ pub fn run() {
             commands::apps::warm_app_cache();
             Ok(())
         })
+        .on_window_event(|window, event| {
+            if window.label() == "dock" {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    if let Err(e) = window.hide() {
+                        log::error!("hide dock on close failed: {e}");
+                    }
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             commands::settings::get_settings,
             commands::settings::set_settings,
@@ -149,9 +159,9 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
     use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
     use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 
-    let toggle = MenuItem::with_id(app, "toggle", "Show/hide dock", true, None::<&str>)?;
-    let settings = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "Quit Aero Dock", true, None::<&str>)?;
+    let toggle = MenuItem::with_id(app, "toggle", "도크 표시/숨기기", true, None::<&str>)?;
+    let settings = MenuItem::with_id(app, "settings", "도크 설정…", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "앱 완전히 종료", true, None::<&str>)?;
     let separator = PredefinedMenuItem::separator(app)?;
     let menu = Menu::with_items(app, &[&toggle, &settings, &separator, &quit])?;
 
@@ -174,7 +184,7 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
                 .expect("bundle has a default icon")
                 .clone(),
         )
-        .tooltip("Aero Dock (right-click for menu)")
+        .tooltip("Aero Dock · 클릭해서 도크 표시/숨기기")
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {

@@ -5,7 +5,7 @@
  * headroom + tooltip space + flyout space when a menu is open).
  */
 
-import { AnimatePresence, motion, Reorder, useMotionValue } from "motion/react";
+import { AnimatePresence, motion, useMotionValue } from "motion/react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from "react";
 import { springs } from "../../engine/animation/springs";
@@ -25,6 +25,7 @@ import { SearchButton, SettingsButton } from "./DockControls";
 import { MODE_FLYOUT_HEIGHT, ModeSwitcher, useModeSwitcher } from "./ModeSwitcher";
 import { DockIcon } from "./DockIcon";
 import { useDockResize } from "./useDockResize";
+import { usePinnedReorder } from "./usePinnedReorder";
 import { FolderFlyout } from "./FolderFlyout";
 import { StackFlyout } from "./StackFlyout";
 import { anchorFor, useMenu } from "./menuStore";
@@ -64,6 +65,8 @@ export function DockBar({ settings, items, onLaunch }: DockBarProps) {
   const gamePaused = useRunning((s) => s.immersiveActive);
   const menu = useMenu();
   const draggingRef = useRef(false);
+  const reorderGeneration = useRef(0);
+  const [dragging, setDragging] = useState(false);
   const beginResize = useCallback(() => {
     menu.close();
     mouseAxis.set(Infinity);
@@ -71,8 +74,8 @@ export function DockBar({ settings, items, onLaunch }: DockBarProps) {
   const { viewportRef, resizeRef, resizing, startResize, finishResize, resizeKey } =
     useDockResize(iconSize, items.length, vertical, beginResize);
   const heldItems = useRef(items);
-  if (!resizing) heldItems.current = items;
-  const shownItems = resizing ? heldItems.current : items;
+  if (!resizing && !dragging) heldItems.current = items;
+  const shownItems = resizing || dragging ? heldItems.current : items;
 
 
   const pinnedItems = useMemo(() => shownItems.filter((i) => i.pinned), [shownItems]);
@@ -119,7 +122,6 @@ export function DockBar({ settings, items, onLaunch }: DockBarProps) {
   const [hidden, setHidden] = useState(false);
   const [windowShrunk, setWindowShrunk] = useState(false);
   const [pointerInside, setPointerInside] = useState(false);
-  const [dragging, setDragging] = useState(false);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const shrinkTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
@@ -305,6 +307,29 @@ export function DockBar({ settings, items, onLaunch }: DockBarProps) {
     onContext: openMenu,
   };
 
+  const reorder = usePinnedReorder({
+    vertical,
+    disabled: resizing || moving || menuOpen || fileDragOver,
+    instant: gamePaused,
+    onStart: () => {
+      reorderGeneration.current++;
+      draggingRef.current = true;
+      setDragging(true);
+      mouseAxis.set(Infinity);
+    },
+    onOrder: setOrder,
+    onFinish: (ids) => {
+      const generation = reorderGeneration.current;
+      setDragging(false);
+      const save = ids ? ipc.reorderPinned(ids) : Promise.resolve();
+      save.catch(notify.on("Could not save the new order")).finally(() => {
+        setTimeout(() => {
+          if (generation === reorderGeneration.current) draggingRef.current = false;
+        }, 50);
+      });
+    },
+  });
+
   const startMove = useCallback((e: PointerEvent<HTMLButtonElement>) => {
     if (e.button !== 0 || movingRef.current || resizeRef.current || draggingRef.current) return;
     e.preventDefault();
@@ -345,7 +370,7 @@ export function DockBar({ settings, items, onLaunch }: DockBarProps) {
       data-edge={edge}
       data-asleep={asleep || gamePaused}
       data-resizing={resizing}
-      style={{ "--icon-size": `${iconSize}px`, "--window-inset": `${(MAX_ICON_SIZE * (peak - 1) + EDGE_SLACK) / 2}px` } as CSSProperties}
+      style={{ "--icon-size": `${iconSize}px`, "--window-inset": `${(MAX_ICON_SIZE * (peak - 1) + EDGE_SLACK) / 2}px`, "--tooltip-clearance": `${Math.max(34, iconSize * (peak - 1) + 12)}px` } as CSSProperties}
       onMouseEnter={() => setPointerInside(true)}
       onMouseLeave={() => setPointerInside(false)}
     >
@@ -364,45 +389,19 @@ export function DockBar({ settings, items, onLaunch }: DockBarProps) {
         {settings.dock.showSearchButton && (
           <SearchButton onClick={() => setSearchOpen(!searchOpen)} />
         )}
-        <Reorder.Group
-          as="div"
+        <div
+          {...reorder}
           className="dock-section"
-          axis={vertical ? "y" : "x"}
-          values={order}
-          onReorder={setOrder}
         >
           {orderedPinned.map((item) => (
-            <Reorder.Item
-              as="div"
+            <div
               key={item.id}
-              value={item.id}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              /* Only the siblings animate. Momentum and elasticity both
-                 make the dragged tile trail the cursor, which is what
-                 read as lag, so the tile itself tracks 1:1. */
-              transition={gamePaused ? { duration: 0 } : springs.reorder}
-              dragMomentum={false}
-              dragElastic={0.04}
-              whileDrag={{ zIndex: 30 }}
-              onDragStart={() => {
-                draggingRef.current = true;
-                setDragging(true);
-                mouseAxis.set(Infinity);
-              }}
-              onDragEnd={() => {
-                ipc.reorderPinned(order).catch(notify.on("Could not save the new order"));
-                setDragging(false);
-                // let the trailing click event pass before re-enabling launch
-                setTimeout(() => {
-                  draggingRef.current = false;
-                }, 50);
-              }}
+              data-reorder-id={item.id}
             >
               <DockIcon item={item} {...iconProps} />
-            </Reorder.Item>
+            </div>
           ))}
-        </Reorder.Group>
+        </div>
         {dropSlots > 0 && (
           <motion.div
             className="dock-drop-slot"
