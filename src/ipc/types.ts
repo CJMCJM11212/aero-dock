@@ -177,6 +177,12 @@ export interface SystemStatus {
   recycleBin: { items: number; bytes: number };
 }
 
+export interface MediaStatus {
+  media: { available: boolean; title: string; artist: string; artworkUrl: string | null; playing: boolean };
+  volume: { available: boolean; level: number; muted: boolean };
+  microphone: { available: boolean; muted: boolean };
+}
+
 /** One app in the Windows volume mixer, rolled up across its sessions. */
 export interface AppAudio {
   exe: string;

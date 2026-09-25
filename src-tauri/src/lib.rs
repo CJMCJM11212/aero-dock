@@ -5,6 +5,7 @@ pub mod platform;
 use tauri::Manager;
 
 use crate::commands::dock::DockGeometry;
+use crate::commands::media::MediaGeometry;
 use crate::core::settings::SettingsStore;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -30,6 +31,7 @@ pub fn run() {
             None,
         ))
         .manage(DockGeometry::default())
+        .manage(MediaGeometry::default())
         .setup(|app| {
             let handle = app.handle().clone();
             let store = SettingsStore::load(&handle)?;
@@ -50,6 +52,25 @@ pub fn run() {
             commands::dock::position_dock(&handle)?;
             window.show()?;
 
+            let media_window = app.get_webview_window("media")
+                .expect("media window declared in tauri.conf.json");
+            #[cfg(windows)]
+            platform::windows::dock_window::apply_dock_styles(
+                windows::Win32::Foundation::HWND(media_window.hwnd()?.0),
+            )?;
+            #[cfg(windows)]
+            if let Err(error) = platform::windows::dock_window::apply_media_blur(
+                windows::Win32::Foundation::HWND(media_window.hwnd()?.0),
+            ) {
+                log::warn!("media background blur unavailable: {error}");
+            }
+            commands::media::position_media(&handle)?;
+            media_window.show()?;
+            // Showing a hidden WebView on a monitor with different DPI can
+            // scale its physical rectangle again. Reassert the saved native
+            // rectangle synchronously before the first event-loop paint.
+            commands::media::position_media(&handle)?;
+
             #[cfg(windows)]
             platform::windows::running::start(handle.clone());
             commands::system_cmd::start_poller(handle.clone());
@@ -67,7 +88,7 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            if window.label() == "dock" {
+            if window.label() == "dock" || window.label() == "media" {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                     api.prevent_close();
                     if let Err(e) = window.hide() {
@@ -118,6 +139,12 @@ pub fn run() {
             commands::windows_cmd::hide_window_previews,
             commands::system_cmd::get_system_status,
             commands::system_cmd::set_volume,
+            commands::media::get_media_status,
+            commands::media::control_media,
+            commands::media::set_microphone_mute,
+            commands::media::begin_media_gesture,
+            commands::media::update_media_gesture,
+            commands::media::finish_media_gesture,
             commands::system_cmd::open_recycle_bin,
             commands::system_cmd::empty_recycle_bin,
             commands::system_cmd::get_wallpaper_accent,
@@ -160,10 +187,11 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
     use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 
     let toggle = MenuItem::with_id(app, "toggle", "도크 표시/숨기기", true, None::<&str>)?;
+    let media = MenuItem::with_id(app, "media", "재생바 표시/숨기기", true, None::<&str>)?;
     let settings = MenuItem::with_id(app, "settings", "도크 설정…", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "앱 완전히 종료", true, None::<&str>)?;
     let separator = PredefinedMenuItem::separator(app)?;
-    let menu = Menu::with_items(app, &[&toggle, &settings, &separator, &quit])?;
+    let menu = Menu::with_items(app, &[&toggle, &media, &settings, &separator, &quit])?;
 
     fn toggle_dock(app: &tauri::AppHandle) {
         if let Some(w) = app.get_webview_window("dock") {
@@ -189,6 +217,12 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
             "toggle" => toggle_dock(app),
+            "media" => {
+                if let Some(w) = app.get_webview_window("media") {
+                    if w.is_visible().unwrap_or(false) { let _ = w.hide(); }
+                    else { let _ = w.show(); }
+                }
+            }
             "settings" => {
                 let app = app.clone();
                 tauri::async_runtime::spawn(async move {

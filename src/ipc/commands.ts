@@ -9,6 +9,7 @@ import type {
   AppEntry,
   AudioDevice,
   MonitorInfoEx,
+  MediaStatus,
   OutputChoice,
   PinnedItem,
   RecentFile,
@@ -79,6 +80,17 @@ export const ipc = {
   getSystemStatus: () => invoke<SystemStatus>("get_system_status"),
   setVolume: (level?: number, mute?: boolean) =>
     invoke<void>("set_volume", { level: level ?? null, mute: mute ?? null }),
+  getMediaStatus: () => invoke<MediaStatus>("get_media_status"),
+  controlMedia: (action: "previous" | "toggle" | "next") =>
+    invoke<boolean>("control_media", { action }),
+  setMicrophoneMute: (mute: boolean) =>
+    invoke<MediaStatus["microphone"]>("set_microphone_mute", { mute }),
+  beginMediaGesture: (kind: "move" | "resize") =>
+    invoke<void>("begin_media_gesture", { kind }),
+  updateMediaGesture: (dx: number, dy: number) =>
+    invoke<void>("update_media_gesture", { dx, dy }),
+  finishMediaGesture: (cancel: boolean) =>
+    invoke<void>("finish_media_gesture", { cancel }),
   openRecycleBin: () => invoke<void>("open_recycle_bin"),
   emptyRecycleBin: () => invoke<void>("empty_recycle_bin"),
   getWallpaperAccent: () => invoke<string>("get_wallpaper_accent"),

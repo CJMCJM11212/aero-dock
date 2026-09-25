@@ -3,6 +3,7 @@ pub mod apps;
 pub mod dock_window;
 pub mod icons;
 pub mod memory;
+pub mod media;
 pub mod monitors;
 pub mod recent;
 pub mod running;

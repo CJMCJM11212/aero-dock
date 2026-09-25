@@ -1,6 +1,7 @@
 pub mod apps;
 pub mod audio;
 pub mod dock;
+pub mod media;
 pub mod modes;
 pub mod settings;
 pub mod system_cmd;

@@ -6,7 +6,7 @@
 use serde::Serialize;
 use windows::core::PCWSTR;
 use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
-use windows::Win32::Media::Audio::{eConsole, eRender, IMMDeviceEnumerator, MMDeviceEnumerator};
+use windows::Win32::Media::Audio::{eCapture, eConsole, eRender, IMMDeviceEnumerator, MMDeviceEnumerator, DEVICE_STATE_ACTIVE};
 use windows::Win32::Networking::NetworkListManager::{
     INetworkListManager, NetworkListManager, NLM_CONNECTIVITY_IPV4_INTERNET,
     NLM_CONNECTIVITY_IPV6_INTERNET,
@@ -32,6 +32,13 @@ pub struct VolumeStatus {
     pub available: bool,
     /// 0..=100
     pub level: u8,
+    pub muted: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct MicrophoneStatus {
+    pub available: bool,
     pub muted: bool,
 }
 
@@ -93,7 +100,7 @@ fn endpoint_volume() -> AeroResult<IAudioEndpointVolume> {
     Ok(volume)
 }
 
-fn read_volume() -> AeroResult<VolumeStatus> {
+pub fn read_volume() -> AeroResult<VolumeStatus> {
     let volume = endpoint_volume()?;
     let level = unsafe { volume.GetMasterVolumeLevelScalar()? };
     let muted = unsafe { volume.GetMute()? }.as_bool();
@@ -102,6 +109,39 @@ fn read_volume() -> AeroResult<VolumeStatus> {
         level: (level * 100.0).round() as u8,
         muted,
     })
+}
+
+/// An application may select any active capture endpoint, so operate on all
+/// of them rather than only the system's default microphone.
+pub fn microphone_status() -> AeroResult<MicrophoneStatus> {
+    let _com = ComApartment::new();
+    let enumerator: IMMDeviceEnumerator = unsafe { CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_INPROC_SERVER)? };
+    let collection = unsafe { enumerator.EnumAudioEndpoints(eCapture, DEVICE_STATE_ACTIVE)? };
+    let count = unsafe { collection.GetCount()? };
+    if count == 0 { return Ok(MicrophoneStatus::default()); }
+    let mut muted = true;
+    let mut available = false;
+    for i in 0..count {
+        let device = unsafe { collection.Item(i)? };
+        if let Ok(endpoint) = unsafe { device.Activate::<IAudioEndpointVolume>(CLSCTX_INPROC_SERVER, None) } {
+            available = true;
+            muted &= unsafe { endpoint.GetMute()? }.as_bool();
+        }
+    }
+    Ok(MicrophoneStatus { available, muted: available && muted })
+}
+
+pub fn set_microphone_mute(mute: bool) -> AeroResult<MicrophoneStatus> {
+    let _com = ComApartment::new();
+    let enumerator: IMMDeviceEnumerator = unsafe { CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_INPROC_SERVER)? };
+    let collection = unsafe { enumerator.EnumAudioEndpoints(eCapture, DEVICE_STATE_ACTIVE)? };
+    for i in 0..unsafe { collection.GetCount()? } {
+        let device = unsafe { collection.Item(i)? };
+        if let Ok(endpoint) = unsafe { device.Activate::<IAudioEndpointVolume>(CLSCTX_INPROC_SERVER, None) } {
+            unsafe { endpoint.SetMute(mute, std::ptr::null())? };
+        }
+    }
+    microphone_status()
 }
 
 /// Set master volume 0..=100; `mute` of None leaves mute state alone.
