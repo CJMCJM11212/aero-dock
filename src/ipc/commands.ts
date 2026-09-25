@@ -9,6 +9,7 @@ import type {
   AppEntry,
   AudioDevice,
   MonitorInfoEx,
+  MediaStatus,
   OutputChoice,
   PinnedItem,
   RecentFile,
@@ -26,6 +27,9 @@ export const ipc = {
   setSettings: (settings: Settings) => invoke<Settings>("set_settings", { settings }),
   beginDockMove: () => invoke<void>("begin_dock_move"),
   finishDockMove: () => invoke<boolean>("finish_dock_move"),
+  beginDockResize: (slots: number, vertical: boolean) => invoke<void>("begin_dock_resize", { slots, vertical }),
+  updateDockResize: (size: number) => invoke<number>("update_dock_resize", { size }),
+  finishDockResize: (cancel: boolean) => invoke<Settings>("finish_dock_resize", { cancel }),
   nudgeDock: (dx: number, dy: number) => invoke<void>("nudge_dock", { dx, dy }),
   resetDockPosition: () => invoke<void>("reset_dock_position"),
   pinItem: (item: PinnedItem, index?: number) =>
@@ -76,6 +80,17 @@ export const ipc = {
   getSystemStatus: () => invoke<SystemStatus>("get_system_status"),
   setVolume: (level?: number, mute?: boolean) =>
     invoke<void>("set_volume", { level: level ?? null, mute: mute ?? null }),
+  getMediaStatus: () => invoke<MediaStatus>("get_media_status"),
+  controlMedia: (action: "previous" | "toggle" | "next") =>
+    invoke<boolean>("control_media", { action }),
+  setMicrophoneMute: (mute: boolean) =>
+    invoke<MediaStatus["microphone"]>("set_microphone_mute", { mute }),
+  beginMediaGesture: (kind: "move" | "resize") =>
+    invoke<void>("begin_media_gesture", { kind }),
+  updateMediaGesture: (dx: number, dy: number) =>
+    invoke<void>("update_media_gesture", { dx, dy }),
+  finishMediaGesture: (cancel: boolean) =>
+    invoke<void>("finish_media_gesture", { cancel }),
   openRecycleBin: () => invoke<void>("open_recycle_bin"),
   emptyRecycleBin: () => invoke<void>("empty_recycle_bin"),
   getWallpaperAccent: () => invoke<string>("get_wallpaper_accent"),
@@ -125,7 +140,8 @@ export const ipc = {
     invoke<SwitchReport | null>("foreground_changed", { exe }),
 
   // dock window
-  resizeDock: (width: number, height: number) =>
-    invoke<void>("resize_dock", { width, height }),
+  setDockBand: (size: number, open: boolean) => invoke<void>("set_dock_band", { size, open }),
+  resizeDock: (width: number, height: number, anchorStart = false) =>
+    invoke<void>("resize_dock", { width, height, anchorStart }),
   listMonitors: () => invoke<MonitorInfoEx[]>("list_monitors"),
 };

@@ -55,6 +55,8 @@ export interface PinnedItem {
   id: string;
   kind: PinKind;
   path: string;
+  args?: string;
+  iconSource?: string | null;
   name: string;
   icon: string | null;
   children: PinnedItem[];
@@ -158,6 +160,7 @@ export interface WindowInfo {
 export interface RunningSnapshot {
   windows: WindowInfo[];
   focused: number;
+  immersiveActive: boolean;
 }
 
 export interface RecentFile {
@@ -172,6 +175,12 @@ export interface SystemStatus {
   internet: boolean;
   volume: { available: boolean; level: number; muted: boolean };
   recycleBin: { items: number; bytes: number };
+}
+
+export interface MediaStatus {
+  media: { available: boolean; title: string; artist: string; artworkUrl: string | null; playing: boolean };
+  volume: { available: boolean; level: number; muted: boolean };
+  microphone: { available: boolean; muted: boolean };
 }
 
 /** One app in the Windows volume mixer, rolled up across its sessions. */

@@ -176,6 +176,12 @@ pub struct PinnedItem {
     /// Filesystem target. Empty for stacks.
     #[serde(default)]
     pub path: String,
+    /// Preserve shortcut launch arguments independently of the executable.
+    #[serde(default)]
+    pub args: String,
+    /// Shortcut/custom icon source; the launcher executable may be generic.
+    #[serde(default)]
+    pub icon_source: Option<String>,
     pub name: String,
     /// Icon cache key (see icons module); `None` = not yet extracted.
     #[serde(default)]
@@ -660,6 +666,8 @@ mod tests {
             id: id.into(),
             kind: PinKind::App,
             path: format!(r"C:\apps\{id}.exe"),
+            args: String::new(),
+            icon_source: None,
             name: id.into(),
             icon: None,
             children: Vec::new(),

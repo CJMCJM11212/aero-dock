@@ -11,6 +11,7 @@ import { EVENTS, type RunningSnapshot, type WindowInfo } from "../ipc/types";
 interface RunningState {
   windows: WindowInfo[];
   focused: number;
+  immersiveActive: boolean;
   hydrated: boolean;
   hydrate: () => Promise<void>;
 }
@@ -18,16 +19,17 @@ interface RunningState {
 export const useRunning = create<RunningState>((set, get) => ({
   windows: [],
   focused: 0,
+  immersiveActive: false,
   hydrated: false,
 
   hydrate: async () => {
     if (get().hydrated) return;
     set({ hydrated: true });
     await listen<RunningSnapshot>(EVENTS.runningChanged, (event) => {
-      set({ windows: event.payload.windows, focused: event.payload.focused });
+      set({ windows: event.payload.windows, focused: event.payload.focused, immersiveActive: event.payload.immersiveActive });
     });
     const snap = await ipc.getRunning();
-    set({ windows: snap.windows, focused: snap.focused });
+    set({ windows: snap.windows, focused: snap.focused, immersiveActive: snap.immersiveActive });
   },
 }));
 
@@ -36,6 +38,11 @@ const APPS_FOLDER_PREFIX = "shell:appsfolder\\";
 /** Identity key for a window: AUMID for packaged apps (their exe is
  * always ApplicationFrameHost), exe path otherwise. */
 export function windowKey(w: WindowInfo): string {
+  // The Store-installed Codex desktop app reports a Win32 window without
+  // an AUMID, even though its stable launch target is an AppsFolder AUMID.
+  if (/\\WindowsApps\\OpenAI\.Codex_[^\\]+\\app\\ChatGPT\.exe$/i.test(w.exe)) {
+    return "aumid:openai.codex_2p2nqsd0c76g0!app";
+  }
   return w.aumid ? `aumid:${w.aumid.toLowerCase()}` : w.exe.toLowerCase();
 }
 

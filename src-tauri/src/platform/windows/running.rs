@@ -13,16 +13,18 @@ use tauri::{AppHandle, Emitter};
 use windows::core::w;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
+use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
 use windows::Win32::System::Threading::{
     OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
     PROCESS_QUERY_LIMITED_INFORMATION,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DispatchMessageW, EnumWindows, GetClassNameW, GetMessageW,
-    GetWindow, GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId,
+    GetForegroundWindow, GetWindow, GetWindowLongPtrW, GetWindowRect, GetWindowTextLengthW,
+    GetWindowTextW, GetWindowThreadProcessId,
     IsWindow, IsWindowVisible, RegisterClassW, RegisterShellHookWindow, RegisterWindowMessageW,
-    TranslateMessage, GWL_EXSTYLE, GW_OWNER, MSG, WINDOW_EX_STYLE, WINDOW_STYLE,
-    WNDCLASSW, WS_EX_TOOLWINDOW,
+    TranslateMessage, GWL_EXSTYLE, GWL_STYLE, GW_OWNER, MSG, WINDOW_EX_STYLE, WINDOW_STYLE,
+    WNDCLASSW, WS_EX_TOOLWINDOW, WS_OVERLAPPEDWINDOW,
 };
 
 pub const RUNNING_EVENT: &str = "apps://running-changed";
@@ -55,16 +57,23 @@ pub struct RunningSnapshot {
     pub windows: Vec<WindowInfo>,
     /// HWND of the foreground window (0 = none of ours).
     pub focused: isize,
+    /// Foreground borderless/fullscreen app: pause visual work and app scans.
+    pub immersive_active: bool,
 }
 
 struct TrackerState {
     app: AppHandle,
     windows: HashMap<isize, WindowInfo>,
     focused: isize,
+    immersive_active: bool,
 }
 
 static STATE: OnceLock<Mutex<TrackerState>> = OnceLock::new();
 static SHELL_MSG: OnceLock<u32> = OnceLock::new();
+
+pub fn immersive_active() -> bool {
+    STATE.get().is_some_and(|state| state.lock().immersive_active)
+}
 
 /// Current snapshot for the initial frontend hydrate.
 pub fn snapshot() -> RunningSnapshot {
@@ -76,11 +85,13 @@ pub fn snapshot() -> RunningSnapshot {
             RunningSnapshot {
                 windows,
                 focused: s.focused,
+                immersive_active: s.immersive_active,
             }
         }
         None => RunningSnapshot {
             windows: Vec::new(),
             focused: 0,
+            immersive_active: false,
         },
     }
 }
@@ -94,7 +105,8 @@ pub fn start(app: AppHandle) {
 }
 
 fn run_message_loop(app: AppHandle) {
-    let initial: HashMap<isize, WindowInfo> = enumerate_taskbar_windows()
+    let immersive_active = unsafe { is_immersive_window(GetForegroundWindow()) };
+    let initial: HashMap<isize, WindowInfo> = if immersive_active { Vec::new() } else { enumerate_taskbar_windows() }
         .into_iter()
         .map(|w| (w.hwnd, w))
         .collect();
@@ -102,6 +114,7 @@ fn run_message_loop(app: AppHandle) {
         app: app.clone(),
         windows: initial,
         focused: 0,
+        immersive_active,
     }));
     emit_snapshot();
 
@@ -158,6 +171,14 @@ unsafe extern "system" fn wnd_proc(
 ) -> LRESULT {
     if Some(&msg) == SHELL_MSG.get() {
         let target = HWND(lparam.0 as *mut _);
+        let foreground = if matches!(wparam.0, HSHELL_WINDOWACTIVATED | HSHELL_RUDEAPPACTIVATED) {
+            target
+        } else {
+            unsafe { GetForegroundWindow() }
+        };
+        if update_immersive_state(foreground) {
+            return LRESULT(0);
+        }
         match wparam.0 {
             HSHELL_WINDOWCREATED | HSHELL_REDRAW => {
                 if let Some(info) = unsafe { probe_window(target) } {
@@ -204,6 +225,62 @@ fn with_state<R>(f: impl FnOnce(&mut TrackerState) -> R) -> Option<R> {
     STATE.get().map(|state| f(&mut state.lock()))
 }
 
+/// Treat a foreground full-screen window or a game install as immersive.
+/// Shell hooks keep firing, but app enumeration and frontend motion sleep
+/// until the foreground returns to an ordinary window.
+fn update_immersive_state(foreground: HWND) -> bool {
+    let active = unsafe { is_immersive_window(foreground) };
+    let changed = with_state(|s| {
+        if s.immersive_active == active { return false; }
+        s.immersive_active = active;
+        if !active {
+            s.windows = enumerate_taskbar_windows().into_iter().map(|w| (w.hwnd, w)).collect();
+            s.focused = foreground.0 as isize;
+        }
+        true
+    }).unwrap_or(false);
+    if changed { emit_snapshot(); }
+    active
+}
+
+unsafe fn is_immersive_window(hwnd: HWND) -> bool {
+    unsafe {
+        if hwnd.0.is_null() || !IsWindowVisible(hwnd).as_bool() || GetWindowTextLengthW(hwnd) == 0 {
+            return false;
+        }
+        let class = window_class(hwnd).to_ascii_lowercase();
+        if SHELL_CLASSES.contains(&class.as_str()) || class == "aerodockshellhook" {
+            return false;
+        }
+        // Ordinary maximized windows retain a framed style. Borderless game
+        // windows generally use popup chrome and cover the monitor bounds.
+        if (GetWindowLongPtrW(hwnd, GWL_STYLE) as u32 & WS_OVERLAPPEDWINDOW.0) == 0 {
+            let mut rect = windows::Win32::Foundation::RECT::default();
+            let monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+            let mut info = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
+            if GetWindowRect(hwnd, &mut rect).is_ok() && GetMonitorInfoW(monitor, &mut info).as_bool() {
+                let screen = info.rcMonitor;
+                if rect.left <= screen.left + 2 && rect.top <= screen.top + 2 &&
+                    rect.right >= screen.right - 2 && rect.bottom >= screen.bottom - 2 {
+                    return true;
+                }
+            }
+        }
+        let mut pid = 0;
+        GetWindowThreadProcessId(hwnd, Some(&mut pid));
+        pid != 0 && process_path(pid).is_some_and(|path| is_known_game_path(&path))
+    }
+}
+
+fn is_known_game_path(path: &str) -> bool {
+    let path = path.to_ascii_lowercase();
+    path.contains("\\steamapps\\common\\") ||
+        path.contains("\\xboxgames\\") ||
+        path.contains("\\gog games\\") ||
+        (path.contains("\\riot games\\") && !path.contains("\\riot client\\")) ||
+        (path.contains("\\epic games\\") && !path.contains("\\launcher\\"))
+}
+
 /// Drop stale entries (windows that died without a DESTROYED hook) and
 /// push the new snapshot to the frontend.
 fn prune_and_emit() {
@@ -225,6 +302,7 @@ fn emit_snapshot() {
                 RunningSnapshot {
                     windows,
                     focused: s.focused,
+                    immersive_active: s.immersive_active,
                 },
             )
         };

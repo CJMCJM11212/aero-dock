@@ -17,17 +17,44 @@ interface SettingsState {
   apply: (mutate: (draft: Settings) => void) => Promise<void>;
 }
 
+let hydrationPromise: Promise<void> | null = null;
+
+async function readInitialSettings(): Promise<Settings> {
+  const deadline = Date.now() + 5000;
+  while (true) {
+    try {
+      return await ipc.getSettings();
+    } catch (error) {
+      // The WebView can start its first render before Tauri's setup has
+      // registered SettingsStore. Retry only that startup race.
+      if (!String(error).includes("state not managed for field `store`") || Date.now() >= deadline) {
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 80));
+    }
+  }
+}
+
 export const useSettings = create<SettingsState>((set, get) => ({
   settings: null,
   hydrated: false,
 
-  hydrate: async () => {
-    if (get().hydrated) return;
-    const settings = await ipc.getSettings();
-    set({ settings, hydrated: true });
-    await listen<Settings>(EVENTS.settingsChanged, (event) => {
-      set({ settings: event.payload });
-    });
+  hydrate: () => {
+    if (get().hydrated) return Promise.resolve();
+    if (hydrationPromise) return hydrationPromise;
+    const current = (async () => {
+      const settings = await readInitialSettings();
+      await listen<Settings>(EVENTS.settingsChanged, (event) => {
+        set({ settings: event.payload });
+      });
+      set({ settings, hydrated: true });
+    })();
+    hydrationPromise = current;
+    void current.then(
+      () => { if (hydrationPromise === current) hydrationPromise = null; },
+      () => { if (hydrationPromise === current) hydrationPromise = null; },
+    );
+    return current;
   },
 
   apply: async (mutate) => {

@@ -6,9 +6,22 @@
  */
 
 import { create } from "zustand";
+import instagramBookmarkIcon from "../assets/bookmark-icons/instagram.png";
+import threadsBookmarkIcon from "../assets/bookmark-icons/threads.png";
 import { ipc } from "../ipc/commands";
 import type { PinnedItem, WindowInfo } from "../ipc/types";
 import { exeDisplayName, targetKey, windowsByExe } from "./runningStore";
+
+export const BOOKMARK_ICONS = {
+  "aerodock:bookmark:instagram": instagramBookmarkIcon,
+  "aerodock:bookmark:threads": threadsBookmarkIcon,
+};
+
+/** A browser shortcut with a URL opens that bookmark on every click. */
+export function isBrowserBookmark(path: string, args?: string): boolean {
+  return /(?:^|\\)(?:whale|chrome|msedge|firefox)\.exe$/i.test(path)
+    && /https?:\/\/\S+/i.test(args ?? "");
+}
 
 export interface DockItemView {
   id: string;
@@ -17,6 +30,7 @@ export interface DockItemView {
   args?: string;
   kind: PinnedItem["kind"];
   iconSrc: string | null;
+  iconTarget: string;
   children: PinnedItem[];
   /** Resolved icon URLs for stack children (parallel to children). */
   childIcons: (string | null)[];
@@ -40,7 +54,7 @@ interface IconState {
 }
 
 export const useDockIcons = create<IconState>((set, get) => ({
-  iconUrls: {},
+  iconUrls: { ...BOOKMARK_ICONS },
   pendingIcons: new Set(),
 
   resolveIcons: async (targets) => {
@@ -83,19 +97,22 @@ export function buildDockItems(
 ): DockItemView[] {
   const byExe = windowsByExe(runningWindows);
   const pinnedTargets = new Set(
-    pinned.filter((p) => p.path).map((p) => targetKey(p.path)),
+    pinned.filter((p) => p.path && !isBrowserBookmark(p.path, p.args)).map((p) => targetKey(p.path)),
   );
 
   const items: DockItemView[] = pinned.map((p) => {
-    const windows = p.path ? (byExe.get(targetKey(p.path)) ?? []) : [];
+    const windows = p.path && !isBrowserBookmark(p.path, p.args)
+      ? (byExe.get(targetKey(p.path)) ?? []) : [];
     return {
       id: p.id,
       name: p.name,
       target: p.path,
+      args: p.args || undefined,
       kind: p.kind,
-      iconSrc: p.path ? (iconUrls[p.path] ?? null) : null,
+      iconTarget: p.iconSource || p.path,
+      iconSrc: iconUrls[p.iconSource || p.path] ?? null,
       children: p.children,
-      childIcons: p.children.map((c) => (c.path ? (iconUrls[c.path] ?? null) : null)),
+      childIcons: p.children.map((c) => iconUrls[c.iconSource || c.path] ?? null),
       pinned: true,
       windows,
       focused: windows.some((w) => w.hwnd === focused),
@@ -115,6 +132,7 @@ export function buildDockItems(
         target,
         kind: "app",
         iconSrc: iconUrls[target] ?? null,
+        iconTarget: target,
         children: [],
         childIcons: [],
         pinned: false,
