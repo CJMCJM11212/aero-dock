@@ -213,7 +213,7 @@ export function SettingsApp() {
             label="Icon size"
             value={dock.iconSize}
             min={32}
-            max={80}
+            max={128}
             step={2}
             format={(v) => `${v}px`}
             onChange={(v) => set((d) => void (d.dock.iconSize = v))}
