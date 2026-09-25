@@ -58,12 +58,6 @@ pub fn run() {
             platform::windows::dock_window::apply_dock_styles(
                 windows::Win32::Foundation::HWND(media_window.hwnd()?.0),
             )?;
-            #[cfg(windows)]
-            if let Err(error) = platform::windows::dock_window::apply_media_blur(
-                windows::Win32::Foundation::HWND(media_window.hwnd()?.0),
-            ) {
-                log::warn!("media background blur unavailable: {error}");
-            }
             commands::media::position_media(&handle)?;
             media_window.show()?;
             // Showing a hidden WebView on a monitor with different DPI can
