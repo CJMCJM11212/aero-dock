@@ -1,5 +1,6 @@
 //! App discovery, icon resolution, and launching.
 
+use base64::Engine;
 use std::collections::HashMap;
 
 use tauri::AppHandle;
@@ -44,8 +45,10 @@ pub async fn list_apps() -> AeroResult<Vec<AppEntry>> {
 }
 
 /// Resolve icons for a batch of launch targets. Returns
-/// `target -> absolute PNG path` for every target that yielded an icon;
+/// `target -> PNG data URL` for every target that yielded an icon;
 /// targets that fail are simply absent (frontend falls back to a glyph).
+/// Data URLs work in both installed and portable mode. The asset protocol's
+/// static scope only covers AppData, while portable icons live beside the exe.
 #[tauri::command]
 pub async fn resolve_icons(
     app: AppHandle,
@@ -56,9 +59,13 @@ pub async fn resolve_icons(
         let mut out = HashMap::with_capacity(targets.len());
         for target in targets {
             match crate::platform::windows::icons::ensure_icon(&target, &cache_dir) {
-                Ok(path) => {
-                    out.insert(target, path.to_string_lossy().to_string());
-                }
+                Ok(path) => match std::fs::read(&path) {
+                    Ok(bytes) => {
+                        let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+                        out.insert(target, format!("data:image/png;base64,{encoded}"));
+                    }
+                    Err(e) => eprintln!("[icons] cannot read {}: {e}", path.display()),
+                },
                 Err(e) => eprintln!("[icons] no icon for {target}: {e}"),
             }
         }

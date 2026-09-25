@@ -371,3 +371,63 @@
     transition: none;
   }
 }
+
+/* ZEUSLAP icon shelf: quiet blue material, square app tiles, no ambient glare. */
+:root[data-window="dock"] .dock-bar.glass.glass-open {
+  --icon-gap: 18px;
+  --dock-pad-x: 18px;
+  --dock-pad-y: 18px;
+  --glass-radius: 34px;
+  padding-bottom: 21px;
+  opacity: 1;
+  background: linear-gradient(165deg, rgba(69, 109, 179, 0.73), rgba(28, 61, 124, 0.77));
+  border: 1px solid rgba(235, 246, 255, 0.14);
+  box-shadow: 0 12px 30px rgba(0, 15, 51, 0.22), inset 0 1px rgba(255, 255, 255, 0.12);
+}
+
+:root[data-window="dock"] .dock-bar.glass::before,
+:root[data-window="dock"] .dock-bar .glass-sweep {
+  display: none;
+}
+
+:root[data-window="dock"] .dock-icon-float {
+  animation: none;
+  padding: 7%;
+  border-radius: 22%;
+  background: linear-gradient(145deg, #fff, #f1f4fa);
+  box-shadow: 0 3px 9px rgba(0, 16, 52, 0.2);
+}
+
+:root[data-window="dock"] .dock-icon img,
+:root[data-window="dock"] .dock-icon .dock-icon-glyph {
+  -webkit-box-reflect: none;
+  filter: none;
+}
+
+:root[data-window="dock"] .dock-icon-glyph {
+  background: linear-gradient(145deg, #59a8ee, #2663d4);
+}
+
+:root[data-window="dock"] .dock-indicator,
+:root[data-window="dock"] .dock-indicator[data-focused="true"] {
+  width: 5px;
+  height: 5px;
+  bottom: -11px;
+  background: rgba(244, 250, 255, 0.93);
+  box-shadow: none;
+}
+
+:root[data-window="dock"] .dock-divider {
+  background: rgba(255, 255, 255, 0.18);
+  box-shadow: none;
+  width: 1px;
+  margin-inline: 2px;
+}
+
+:root[data-window="dock"] .dock-label {
+  background: rgba(20, 38, 76, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 5px 16px rgba(0, 14, 43, 0.2);
+  text-shadow: none;
+  font-weight: 500;
+}

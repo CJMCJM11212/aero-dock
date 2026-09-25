@@ -1,11 +1,10 @@
 /**
  * Dock view model: pinned items (from settings) merged with live running
  * windows, plus resolved icon URLs. Icons live in an on-disk PNG cache on
- * the Rust side; here we only hold `target path -> asset URL` so <img>
+ * the Rust side; here we only hold `target path -> PNG data URL` so <img>
  * elements load them directly with zero IPC per render.
  */
 
-import { convertFileSrc } from "@tauri-apps/api/core";
 import { create } from "zustand";
 import { ipc } from "../ipc/commands";
 import type { PinnedItem, WindowInfo } from "../ipc/types";
@@ -33,7 +32,7 @@ export interface DockItemView {
 }
 
 interface IconState {
-  /** target path -> asset:// URL of the cached PNG */
+  /** target path -> data URL of the cached PNG */
   iconUrls: Record<string, string>;
   /** targets currently being resolved (dedupes in-flight work) */
   pendingIcons: Set<string>;
@@ -53,8 +52,8 @@ export const useDockIcons = create<IconState>((set, get) => ({
     try {
       const resolved = await ipc.resolveIcons(missing);
       const urls: Record<string, string> = {};
-      for (const [target, path] of Object.entries(resolved)) {
-        urls[target] = convertFileSrc(path);
+      for (const [target, url] of Object.entries(resolved)) {
+        urls[target] = url;
       }
       set((s) => ({ iconUrls: { ...s.iconUrls, ...urls } }));
     } catch (e) {
