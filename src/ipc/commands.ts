@@ -26,6 +26,9 @@ export const ipc = {
   setSettings: (settings: Settings) => invoke<Settings>("set_settings", { settings }),
   beginDockMove: () => invoke<void>("begin_dock_move"),
   finishDockMove: () => invoke<boolean>("finish_dock_move"),
+  beginDockResize: (slots: number, vertical: boolean) => invoke<void>("begin_dock_resize", { slots, vertical }),
+  updateDockResize: (size: number) => invoke<number>("update_dock_resize", { size }),
+  finishDockResize: (cancel: boolean) => invoke<Settings>("finish_dock_resize", { cancel }),
   nudgeDock: (dx: number, dy: number) => invoke<void>("nudge_dock", { dx, dy }),
   resetDockPosition: () => invoke<void>("reset_dock_position"),
   pinItem: (item: PinnedItem, index?: number) =>
@@ -125,7 +128,8 @@ export const ipc = {
     invoke<SwitchReport | null>("foreground_changed", { exe }),
 
   // dock window
-  resizeDock: (width: number, height: number) =>
-    invoke<void>("resize_dock", { width, height }),
+  setDockBand: (size: number, open: boolean) => invoke<void>("set_dock_band", { size, open }),
+  resizeDock: (width: number, height: number, anchorStart = false) =>
+    invoke<void>("resize_dock", { width, height, anchorStart }),
   listMonitors: () => invoke<MonitorInfoEx[]>("list_monitors"),
 };

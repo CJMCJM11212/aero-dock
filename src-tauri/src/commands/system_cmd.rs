@@ -72,9 +72,11 @@ pub fn start_poller(app: AppHandle) {
     std::thread::Builder::new()
         .name("aero-system-poll".into())
         .spawn(move || loop {
-            let status = system::read_status();
-            if app.emit(SYSTEM_EVENT, &status).is_err() {
-                return; // app shutting down
+            if !crate::platform::windows::running::immersive_active() {
+                let status = system::read_status();
+                if app.emit(SYSTEM_EVENT, &status).is_err() {
+                    return; // app shutting down
+                }
             }
             std::thread::sleep(std::time::Duration::from_secs(POLL_SECS));
         })

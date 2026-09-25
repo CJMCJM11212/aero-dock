@@ -19,7 +19,7 @@ import { useState } from "react";
 
 export function DockApp() {
   const { settings, hydrate } = useSettings();
-  const { windows, focused, hydrate: hydrateRunning } = useRunning();
+  const { windows, focused, immersiveActive, hydrate: hydrateRunning } = useRunning();
   const { iconUrls, resolveIcons } = useDockIcons();
 
   useEffect(() => {
@@ -32,8 +32,8 @@ export function DockApp() {
   // only signal for that; there is no polling anywhere.
   const refreshAudio = useAppAudio((a) => a.refresh);
   useEffect(() => {
-    void refreshAudio();
-  }, [refreshAudio, windows.length]);
+    if (!immersiveActive) void refreshAudio();
+  }, [refreshAudio, windows.length, immersiveActive]);
 
   // Auto-switching: when the foreground app changes, ask Rust whether a
   // mode claims it. Rust owns the decision so the rules live in exactly
@@ -44,7 +44,7 @@ export function DockApp() {
     [windows, focused],
   );
   useEffect(() => {
-    if (!autoSwitch || !focusedExe) return;
+    if (!autoSwitch || !focusedExe || immersiveActive) return;
     let cancelled = false;
     // a short settle avoids switching on windows that are only passing
     // through the foreground during a restore or an alt-tab sweep
@@ -63,7 +63,7 @@ export function DockApp() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [autoSwitch, focusedExe]);
+  }, [autoSwitch, focusedExe, immersiveActive]);
 
   // pin files/shortcuts dropped onto the dock from Explorer
   useEffect(() => {
@@ -71,8 +71,11 @@ export function DockApp() {
     const unlisten = getCurrentWebview().onDragDropEvent(async (event) => {
       // Hold the dock open while a drag is in flight. Sliding away from
       // the thing someone is aiming at is the worst moment to auto-hide.
-      if (event.payload.type === "enter" || event.payload.type === "over") {
-        setOverDock(true);
+      if (event.payload.type === "enter") {
+        useFileDrag.getState().begin(useSettings.getState().settings?.pinned.length ?? 0, event.payload.paths.length);
+        return;
+      }
+      if (event.payload.type === "over") {
         return;
       }
       if (event.payload.type === "leave") {
@@ -80,27 +83,30 @@ export function DockApp() {
         return;
       }
       if (event.payload.type !== "drop") return;
-      setOverDock(false);
       for (const path of event.payload.paths) {
         try {
           const entry = await ipc.resolveDrop(path);
           const current = await ipc.getSettings();
           const exists = current.pinned.some(
-            (p) => p.path.toLowerCase() === entry.targetPath.toLowerCase(),
+            (p) => p.path.toLowerCase() === entry.targetPath.toLowerCase()
+              && (p.args || "") === entry.args,
           );
           if (exists) continue;
           await ipc.pinItem({
             id: `pin-${crypto.randomUUID()}`,
             kind: entry.source === "folder" ? "folder" : "app",
             path: entry.targetPath,
+            args: entry.args,
+            iconSource: entry.shortcutPath || entry.targetPath,
             name: entry.name,
             icon: entry.icon,
             children: [],
           });
         } catch (e) {
-          notify.error(`Could not pin ${path.split("\\").pop()}`, e);
+          notify.error(`${path.split("\\").pop()} 추가 실패`, e);
         }
       }
+      setOverDock(false);
     });
     return () => {
       unlisten.then((fn) => fn());
@@ -143,10 +149,10 @@ export function DockApp() {
 
   // resolve icons for everything visible (pinned + running + stack children)
   useEffect(() => {
-    const targets = items.filter((i) => !i.iconSrc && i.target).map((i) => i.target);
+    const targets = items.filter((i) => !i.iconSrc && i.iconTarget).map((i) => i.iconTarget);
     for (const item of items) {
       item.children.forEach((c, idx) => {
-        if (c.path && !item.childIcons[idx]) targets.push(c.path);
+        if (c.path && !item.childIcons[idx]) targets.push(c.iconSource || c.path);
       });
     }
     if (targets.length) resolveIcons(targets).catch(() => undefined);

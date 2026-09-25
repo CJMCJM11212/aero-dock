@@ -11,6 +11,7 @@ import { EVENTS, type RunningSnapshot, type WindowInfo } from "../ipc/types";
 interface RunningState {
   windows: WindowInfo[];
   focused: number;
+  immersiveActive: boolean;
   hydrated: boolean;
   hydrate: () => Promise<void>;
 }
@@ -18,16 +19,17 @@ interface RunningState {
 export const useRunning = create<RunningState>((set, get) => ({
   windows: [],
   focused: 0,
+  immersiveActive: false,
   hydrated: false,
 
   hydrate: async () => {
     if (get().hydrated) return;
     set({ hydrated: true });
     await listen<RunningSnapshot>(EVENTS.runningChanged, (event) => {
-      set({ windows: event.payload.windows, focused: event.payload.focused });
+      set({ windows: event.payload.windows, focused: event.payload.focused, immersiveActive: event.payload.immersiveActive });
     });
     const snap = await ipc.getRunning();
-    set({ windows: snap.windows, focused: snap.focused });
+    set({ windows: snap.windows, focused: snap.focused, immersiveActive: snap.immersiveActive });
   },
 }));
 

@@ -27,7 +27,7 @@ export function StackFlyout({ edge }: StackFlyoutProps) {
 
   useEffect(() => {
     if (!active || !item) return;
-    resolveIcons(item.children.map((c) => c.path).filter(Boolean));
+    resolveIcons(item.children.map((c) => c.iconSource || c.path).filter(Boolean));
   }, [active, item, resolveIcons]);
 
   useEffect(() => {
@@ -85,13 +85,13 @@ export function StackFlyout({ edge }: StackFlyoutProps) {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 transition={{ ...springs.bloom, delay: Math.min(i * 0.025, 0.3) }}
                 onClick={() => {
-                  ipc.launch(child.path).catch(notify.on(`Could not open ${child.name}`));
+                  ipc.launch(child.path, child.args).catch(notify.on(`Could not open ${child.name}`));
                   close();
                 }}
                 title={child.name}
               >
-                {iconUrls[child.path] ? (
-                  <img src={iconUrls[child.path]} alt="" draggable={false} />
+                {iconUrls[child.iconSource || child.path] ? (
+                  <img src={iconUrls[child.iconSource || child.path]} alt="" draggable={false} />
                 ) : (
                   <span className="folder-flyout-glyph">▶</span>
                 )}

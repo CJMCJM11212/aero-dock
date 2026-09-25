@@ -58,11 +58,14 @@ export const useMenu = create<MenuState>((set) => ({
 /** Capture an icon's anchor box for flyout positioning. */
 export function anchorFor(target: HTMLElement): MenuAnchor {
   const r = target.getBoundingClientRect();
+  const shelf = target.closest(".dock-bar")?.getBoundingClientRect() ?? r;
+  const edge = target.closest<HTMLElement>(".dock-viewport")?.dataset.edge;
+  const vertical = edge === "left" || edge === "right";
   return {
-    left: r.left,
-    top: r.top,
-    right: r.right,
-    bottom: r.bottom,
+    left: vertical ? shelf.left : r.left,
+    top: vertical ? r.top : shelf.top,
+    right: vertical ? shelf.right : r.right,
+    bottom: vertical ? r.bottom : shelf.bottom,
     cx: r.left + r.width / 2,
     cy: r.top + r.height / 2,
     winW: window.innerWidth,
@@ -85,6 +88,7 @@ export function flyoutStyle(
   gap = 12,
   maxHeight = 0,
 ): React.CSSProperties {
+  width = Math.max(1, Math.min(width, window.innerWidth - 16));
   const style: React.CSSProperties = { position: "absolute", width, zIndex: 100 };
   // when the window is narrower than the flyout, hug the left edge
   // rather than letting the clamp go negative

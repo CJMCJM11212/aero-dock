@@ -17,6 +17,7 @@ export interface DockItemView {
   args?: string;
   kind: PinnedItem["kind"];
   iconSrc: string | null;
+  iconTarget: string;
   children: PinnedItem[];
   /** Resolved icon URLs for stack children (parallel to children). */
   childIcons: (string | null)[];
@@ -92,10 +93,12 @@ export function buildDockItems(
       id: p.id,
       name: p.name,
       target: p.path,
+      args: p.args || undefined,
       kind: p.kind,
-      iconSrc: p.path ? (iconUrls[p.path] ?? null) : null,
+      iconTarget: p.iconSource || p.path,
+      iconSrc: iconUrls[p.iconSource || p.path] ?? null,
       children: p.children,
-      childIcons: p.children.map((c) => (c.path ? (iconUrls[c.path] ?? null) : null)),
+      childIcons: p.children.map((c) => iconUrls[c.iconSource || c.path] ?? null),
       pinned: true,
       windows,
       focused: windows.some((w) => w.hwnd === focused),
@@ -115,6 +118,7 @@ export function buildDockItems(
         target,
         kind: "app",
         iconSrc: iconUrls[target] ?? null,
+        iconTarget: target,
         children: [],
         childIcons: [],
         pinned: false,

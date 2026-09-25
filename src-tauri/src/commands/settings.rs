@@ -19,12 +19,23 @@ pub fn set_settings(
     store: State<'_, SettingsStore>,
     settings: Settings,
 ) -> AeroResult<Settings> {
+    let before = store.get();
     let result = store.replace(&app, settings)?;
     // edge/monitor/floating changes must move the window even when its
-    // size is unchanged (bottom<->top keeps identical dimensions, so the
-    // frontend's resize path never fires)
-    if let Err(e) = crate::commands::dock::position_dock(&app) {
-        log::warn!("reposition after settings change failed: {e}");
+    // size is unchanged. An icon-size save gets its final size from the
+    // frontend; repositioning it here first causes an extra WebView repaint.
+    let moved = before.dock.edge != result.dock.edge
+        || before.dock.monitor != result.dock.monitor
+        || before.dock.floating != result.dock.floating
+        || before.dock.floating_margin != result.dock.floating_margin
+        || before.dock.use_monitor_bounds != result.dock.use_monitor_bounds
+        || before.dock.position.map(|p| (p.center_x, p.bottom_y))
+            != result.dock.position.map(|p| (p.center_x, p.bottom_y))
+        || before.hide_taskbar != result.hide_taskbar;
+    if moved {
+        if let Err(e) = crate::commands::dock::position_dock(&app) {
+            log::warn!("reposition after settings change failed: {e}");
+        }
     }
     Ok(result)
 }
@@ -189,9 +200,9 @@ fn dock_browser_args(app: &AppHandle) -> Option<String> {
 mod tests {
     /// The browser arguments live in tauri.conf.json. Setting them there
     /// replaces Tauri's own defaults rather than adding to them, so those
-    /// have to be repeated, and the GPU flag is what saves the memory.
+    /// have to be repeated. Keep GPU composition enabled for smooth dock motion.
     #[test]
-    fn the_dock_keeps_tauris_defaults_and_renders_in_software() {
+    fn the_dock_keeps_tauris_defaults_and_gpu_composition() {
         let conf: serde_json::Value =
             serde_json::from_str(include_str!("../../tauri.conf.json")).unwrap();
         let args = conf["app"]["windows"]
@@ -202,7 +213,7 @@ mod tests {
             .and_then(|w| w["additionalBrowserArgs"].as_str())
             .expect("the dock sets its browser arguments explicitly");
         assert!(args.contains("msWebOOUI,msPdfOOUI,msSmartScreenProtection"), "{args}");
-        assert!(args.contains("--disable-gpu"), "{args}");
+        assert!(!args.contains("--disable-gpu"), "{args}");
         // a debugging port left in a shipped build lets any local process
         // run script with the app's permissions
         assert!(!args.contains("remote-debugging"), "{args}");

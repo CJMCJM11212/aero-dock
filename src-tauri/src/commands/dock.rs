@@ -6,15 +6,80 @@
 use parking_lot::Mutex;
 use tauri::{AppHandle, Manager};
 use windows::Win32::Foundation::{HWND, RECT};
-use windows::Win32::UI::WindowsAndMessaging::{GetWindowRect, SetWindowPos, SWP_NOACTIVATE, SWP_NOZORDER};
+use windows::Win32::Graphics::Gdi::{CreateRectRgn, SetWindowRgn, DeleteObject, HGDIOBJ};
+use windows::Win32::UI::WindowsAndMessaging::{GetWindowRect, SetWindowPos, SWP_NOACTIVATE, SWP_NOZORDER, SWP_NOMOVE};
+use windows::Win32::UI::HiDpi::GetDpiForWindow;
 
-use crate::core::settings::{DockEdge, DockPosition, SettingsStore};
+use crate::core::settings::{DockEdge, DockPosition, Settings, SettingsStore};
 use crate::core::{AeroError, AeroResult};
 use crate::platform::windows::monitors::{enumerate_monitors, pick_monitor, MonitorInfoEx, Rect};
 
 /// Last content size requested by the frontend, in logical pixels.
 pub struct DockGeometry {
     content_size: Mutex<(f64, f64)>,
+    resize: Mutex<Option<ResizeSession>>,
+    clip: Mutex<Option<ClipBand>>,
+}
+
+struct ClipBand {
+    size: f64,
+    open: bool,
+    edge: DockEdge,
+    applied: Option<(i32, i32, i32, i32)>,
+}
+
+/// Keep the WebView canvas fixed. Only expose the shelf band to drawing/input
+/// while overlays are closed, so transparent reserved space is click-through.
+#[tauri::command]
+pub fn set_dock_band(app: AppHandle, size: f64, open: bool) -> AeroResult<()> {
+    if !size.is_finite() || size < 1.0 { return Err(AeroError::other("invalid dock band")); }
+    let edge = app.state::<SettingsStore>().get().dock.edge;
+    *app.state::<DockGeometry>().clip.lock() = Some(ClipBand { size, open, edge, applied: None });
+    apply_dock_clip(&app)
+}
+
+fn apply_dock_clip(app: &AppHandle) -> AeroResult<()> {
+    let geometry = app.state::<DockGeometry>();
+    let mut clip = geometry.clip.lock();
+    let Some(clip) = clip.as_mut() else { return Ok(()); };
+    let window = app.get_webview_window("dock").ok_or_else(|| AeroError::other("dock window missing"))?;
+    let hwnd = HWND(window.hwnd()?.0);
+    let mut rect = RECT::default();
+    unsafe { GetWindowRect(hwnd, &mut rect)?; }
+    let w = rect.right - rect.left;
+    let h = rect.bottom - rect.top;
+    let band = (clip.size * unsafe { GetDpiForWindow(hwnd) } as f64 / 96.0).ceil() as i32;
+    let bounds = if clip.open { (0, 0, w, h) } else {
+        match clip.edge {
+            DockEdge::Bottom => (0, (h - band).max(0), w, h),
+            DockEdge::Top => (0, 0, w, band.min(h)),
+            DockEdge::Left => (0, 0, band.min(w), h),
+            DockEdge::Right => ((w - band).max(0), 0, w, h),
+        }
+    };
+    if clip.applied == Some(bounds) { return Ok(()); }
+    unsafe {
+        let region = CreateRectRgn(bounds.0, bounds.1, bounds.2, bounds.3);
+        if region.0.is_null() { return Err(AeroError::other("could not create dock region")); }
+        if SetWindowRgn(hwnd, Some(region), true) == 0 {
+            let _ = DeleteObject(HGDIOBJ(region.0));
+            return Err(AeroError::other("could not apply dock region"));
+        }
+        // Windows owns the region after successful SetWindowRgn.
+    }
+    clip.applied = Some(bounds);
+    Ok(())
+}
+
+struct ResizeSession {
+    start: RECT,
+    content: (f64, f64),
+    scale: f64,
+    monitor: MonitorInfoEx,
+    slots: f64,
+    vertical: bool,
+    initial: f64,
+    current: f64,
 }
 
 impl Default for DockGeometry {
@@ -22,15 +87,46 @@ impl Default for DockGeometry {
         Self {
             // sensible pre-first-measure footprint
             content_size: Mutex::new((720.0, 160.0)),
+            resize: Mutex::new(None),
+            clip: Mutex::new(None),
         }
     }
 }
 
 /// Frontend reports its content size; window is resized and repositioned.
 #[tauri::command]
-pub fn resize_dock(app: AppHandle, width: f64, height: f64) -> AeroResult<()> {
+pub fn resize_dock(app: AppHandle, width: f64, height: f64, anchor_start: Option<bool>) -> AeroResult<()> {
     let geometry = app.state::<DockGeometry>();
-    *geometry.content_size.lock() = (width.max(1.0), height.max(1.0));
+    if geometry.resize.lock().is_some() { return Ok(()); }
+    let previous = {
+        let mut content = geometry.content_size.lock();
+        let next = (width.max(1.0), height.max(1.0));
+        if (content.0 - next.0).abs() < 0.001 && (content.1 - next.1).abs() < 0.001 {
+            return Ok(());
+        }
+        let previous = *content;
+        *content = next;
+        previous
+    };
+    if anchor_start == Some(true) {
+        let settings = app.state::<SettingsStore>().get();
+        let window = app.get_webview_window("dock").ok_or_else(|| AeroError::other("dock window missing"))?;
+        let hwnd = HWND(window.hwnd()?.0);
+        let mut rect = RECT::default();
+        unsafe { GetWindowRect(hwnd, &mut rect)?; }
+        let scale = unsafe { GetDpiForWindow(hwnd) } as f64 / 96.0;
+        let w = (width * scale).round().max(1.0) as i32;
+        let h = (height * scale).round().max(1.0) as i32;
+        let x = if settings.dock.edge == DockEdge::Right { rect.right - w } else { rect.left };
+        let y = if settings.dock.edge == DockEdge::Bottom { rect.bottom - h } else { rect.top };
+        unsafe { SetWindowPos(hwnd, None, x, y, w, h, SWP_NOACTIVATE | SWP_NOZORDER)?; }
+        apply_dock_clip(&app)?;
+        let vertical = matches!(settings.dock.edge, DockEdge::Left | DockEdge::Right);
+        if if vertical { previous.1 != height } else { previous.0 != width } {
+            capture_dock_position(&app)?;
+        }
+        return Ok(());
+    }
     position_dock(&app)
 }
 
@@ -39,6 +135,7 @@ pub fn resize_dock(app: AppHandle, width: f64, height: f64) -> AeroResult<()> {
 pub fn position_dock(app: &AppHandle) -> AeroResult<()> {
     let settings = app.state::<SettingsStore>().get();
     let geometry = app.state::<DockGeometry>();
+    if geometry.resize.lock().is_some() { return Ok(()); }
     let (logical_w, logical_h) = *geometry.content_size.lock();
 
     let monitors = enumerate_monitors()?;
@@ -69,10 +166,105 @@ pub fn position_dock(app: &AppHandle) -> AeroResult<()> {
     // like the dock jumping while the resize corner was dragged.
     let hwnd = window.hwnd()?;
     unsafe {
-        SetWindowPos(HWND(hwnd.0), None, x, y, w.max(1), h.max(1),
-            SWP_NOACTIVATE | SWP_NOZORDER)?;
+        let hwnd = HWND(hwnd.0);
+        let mut current = RECT::default();
+        GetWindowRect(hwnd, &mut current)?;
+        let w = w.max(1);
+        let h = h.max(1);
+        if current.left != x || current.top != y
+            || current.right - current.left != w || current.bottom - current.top != h {
+            SetWindowPos(hwnd, None, x, y, w, h, SWP_NOACTIVATE | SWP_NOZORDER)?;
+        }
     }
+    apply_dock_clip(app)
+}
+
+/// Begin without moving or enlarging the window. The gesture owns geometry
+/// until commit/cancel, so settings events cannot recenter it halfway through.
+#[tauri::command]
+pub fn begin_dock_resize(app: AppHandle, slots: u32, vertical: bool) -> AeroResult<()> {
+    let geometry = app.state::<DockGeometry>();
+    let mut active = geometry.resize.lock();
+    if active.is_some() { return Err(AeroError::other("dock resize already active")); }
+    let window = app.get_webview_window("dock").ok_or_else(|| AeroError::other("dock window missing"))?;
+    let hwnd = HWND(window.hwnd()?.0);
+    let mut rect = RECT::default();
+    unsafe { GetWindowRect(hwnd, &mut rect)?; }
+    let scale = unsafe { GetDpiForWindow(hwnd) } as f64 / 96.0;
+    let settings = app.state::<SettingsStore>().get();
+    let monitors = enumerate_monitors()?;
+    let monitor = pick_monitor(&monitors, settings.dock.monitor.as_deref()).clone();
+    *active = Some(ResizeSession {
+        start: rect, content: *geometry.content_size.lock(), scale, monitor,
+        slots: slots.clamp(1, 1000) as f64, vertical,
+        initial: settings.dock.icon_size as f64, current: settings.dock.icon_size as f64,
+    });
     Ok(())
+}
+
+fn apply_resize(hwnd: HWND, session: &mut ResizeSession, size: f64) -> AeroResult<f64> {
+    if !size.is_finite() { return Err(AeroError::other("invalid dock size")); }
+    let size = size.clamp(32.0, 128.0);
+    if size == session.current { return Ok(size); }
+    let delta = ((size - session.initial) * session.slots * session.scale).round() as i32;
+    let width = session.start.right - session.start.left + if session.vertical { 0 } else { delta };
+    let height = session.start.bottom - session.start.top + if session.vertical { delta } else { 0 };
+    // Never move the origin, recenter, or change the perpendicular dimension.
+    unsafe { SetWindowPos(hwnd, None, 0, 0, width.max(1), height.max(1),
+        SWP_NOMOVE | SWP_NOACTIVATE | SWP_NOZORDER)?; }
+    session.current = size;
+    Ok(size)
+}
+
+#[tauri::command]
+pub fn update_dock_resize(app: AppHandle, size: f64) -> AeroResult<f64> {
+    let geometry = app.state::<DockGeometry>();
+    let mut active = geometry.resize.lock();
+    let session = active.as_mut().ok_or_else(|| AeroError::other("no dock resize active"))?;
+    let window = app.get_webview_window("dock").ok_or_else(|| AeroError::other("dock window missing"))?;
+    let size = apply_resize(HWND(window.hwnd()?.0), session, size)?;
+    apply_dock_clip(&app)?;
+    Ok(size)
+}
+
+#[tauri::command]
+pub fn finish_dock_resize(app: AppHandle, cancel: bool) -> AeroResult<Settings> {
+    let geometry = app.state::<DockGeometry>();
+    let mut active = geometry.resize.lock();
+    let Some(session) = active.as_mut() else { return Ok(app.state::<SettingsStore>().get()); };
+    let window = app.get_webview_window("dock").ok_or_else(|| AeroError::other("dock window missing"))?;
+    let hwnd = HWND(window.hwnd()?.0);
+    if cancel {
+        unsafe { SetWindowPos(hwnd, None, session.start.left, session.start.top,
+            session.start.right - session.start.left, session.start.bottom - session.start.top,
+            SWP_NOACTIVATE | SWP_NOZORDER)?; }
+        *geometry.content_size.lock() = session.content;
+        *active = None;
+        apply_dock_clip(&app)?;
+        return Ok(app.state::<SettingsStore>().get());
+    }
+    let final_size = session.current.round() as u32;
+    apply_resize(hwnd, session, final_size as f64)?;
+    apply_dock_clip(&app)?;
+    let mut rect = RECT::default();
+    unsafe { GetWindowRect(hwnd, &mut rect)?; }
+    let delta = (final_size as f64 - session.initial) * session.slots;
+    *geometry.content_size.lock() = (
+        session.content.0 + if session.vertical { 0.0 } else { delta },
+        session.content.1 + if session.vertical { delta } else { 0.0 },
+    );
+    let position = DockPosition {
+        center_x: (((rect.left as f64 + rect.right as f64) / 2.0 - session.monitor.bounds.x as f64)
+            / session.monitor.scale).round() as i32,
+        bottom_y: ((rect.bottom as f64 - session.monitor.bounds.y as f64)
+            / session.monitor.scale).round() as i32,
+    };
+    let result = app.state::<SettingsStore>().update(&app, |settings| {
+        settings.dock.icon_size = final_size;
+        settings.dock.position = Some(position);
+    });
+    *active = None;
+    result
 }
 
 /// Pure placement math: center the dock along the chosen work-area edge.

@@ -7,7 +7,8 @@
   height: 100%;
   display: flex;
   align-items: flex-end;
-  justify-content: center;
+  justify-content: flex-start;
+  padding-inline: var(--window-inset, 24px);
 }
 
 .dock-viewport[data-edge="top"] {
@@ -21,15 +22,18 @@
   animation-play-state: paused;
 }
 .dock-viewport[data-edge="left"] {
-  align-items: center;
+  align-items: flex-start;
   justify-content: flex-start;
+  padding: var(--window-inset, 24px) 0;
 }
 .dock-viewport[data-edge="right"] {
-  align-items: center;
+  align-items: flex-start;
   justify-content: flex-end;
+  padding: var(--window-inset, 24px) 0;
 }
 
 .dock-bar {
+  flex: none;
   display: flex;
   align-items: flex-end;
   gap: var(--icon-gap);
@@ -42,6 +46,25 @@
   align-items: center;
   padding: var(--dock-pad-x) var(--dock-pad-y);
 }
+
+.dock-drop-slot {
+  flex: none;
+  height: var(--icon-size);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 3px;
+  overflow: hidden;
+  border: 1px dashed rgba(255, 255, 255, .5);
+  border-radius: calc(var(--icon-size) * .24);
+  background: rgba(255, 255, 255, .08);
+  color: #f6f6f7;
+  white-space: nowrap;
+  font-size: 11px;
+}
+.dock-drop-slot > span:first-child { font-size: 24px; line-height: 1; }
+.dock-drop-slot[data-vertical="true"] { width: var(--icon-size); }
 
 /* reorderable pinned section mirrors the bar's layout */
 .dock-section {
@@ -200,7 +223,7 @@
   width: 100% !important;
   height: 100% !important;
   object-fit: contain;
-  -webkit-box-reflect: none !important;
+  -webkit-box-reflect: initial !important;
 }
 
 .dock-stack-slot {
@@ -246,13 +269,13 @@
   position: absolute;
   bottom: calc(100% + 14px);
   left: 50%;
-  translate: -50% 0;
-  max-width: 220px;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  translate: calc(-50% + var(--label-shift, 0px)) 0;
+  width: max-content;
+  max-width: min(500px, calc(100vw - 24px));
+  overflow-wrap: anywhere;
   padding: 4px 12px;
   border-radius: 10px;
-  white-space: nowrap;
+  white-space: normal;
   font-size: 12.5px;
   font-weight: 600;
   color: var(--aero-text-on-glass);
@@ -372,7 +395,7 @@
   }
 }
 
-/* ZEUSLAP icon shelf: quiet blue material, square app tiles, no ambient glare. */
+/* ZEUSLAP icon shelf: neutral translucent glass, square app tiles. */
 :root[data-window="dock"] .dock-bar.glass.glass-open {
   --icon-gap: 18px;
   --dock-pad-x: 30px;
@@ -380,9 +403,10 @@
   --glass-radius: 34px;
   padding-bottom: 21px;
   opacity: 1;
-  background: linear-gradient(165deg, rgba(69, 109, 179, 0.73), rgba(28, 61, 124, 0.77));
-  border: 1px solid rgba(235, 246, 255, 0.14);
-  box-shadow: inset 0 1px rgba(255, 255, 255, 0.12), inset 0 -1px rgba(0, 19, 53, 0.12);
+  background: linear-gradient(180deg, rgba(92, 94, 100, 0.14), rgba(48, 50, 57, 0.22));
+  border: 1px solid rgba(255, 255, 255, 0.29);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.28);
+  backdrop-filter: none;
 }
 
 :root[data-window="dock"] .dock-resize-handle {
@@ -465,6 +489,10 @@
   display: none;
 }
 
+:root[data-window="dock"] .dock-icon::before {
+  display: none;
+}
+
 :root[data-window="dock"] .dock-icon-float {
   animation: none;
   padding: 7%;
@@ -473,9 +501,14 @@
   box-shadow: 0 3px 9px rgba(0, 16, 52, 0.2);
 }
 
+:root[data-window="dock"] .dock-icon-float[data-solid-icon="true"] {
+  padding: 0;
+  overflow: hidden;
+}
+
 :root[data-window="dock"] .dock-icon img,
 :root[data-window="dock"] .dock-icon .dock-icon-glyph {
-  -webkit-box-reflect: none;
+  -webkit-box-reflect: initial !important;
   filter: none;
 }
 
@@ -500,9 +533,10 @@
 }
 
 :root[data-window="dock"] .dock-label {
-  background: rgba(20, 38, 76, 0.94);
+  background: rgba(41, 43, 50, 0.92);
   border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 5px 16px rgba(0, 14, 43, 0.2);
+  box-shadow: none;
+  backdrop-filter: none;
   text-shadow: none;
   font-weight: 500;
 }

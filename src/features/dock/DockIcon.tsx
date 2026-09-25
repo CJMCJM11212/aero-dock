@@ -8,7 +8,7 @@ import {
   useTransform,
   type MotionValue,
 } from "motion/react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { springs } from "../../engine/animation/springs";
 import type { DockEdge } from "../../ipc/types";
 import type { DockItemView } from "../../state/dockStore";
@@ -26,6 +26,7 @@ interface DockIconProps {
   edge: DockEdge;
   /** A reorder drag is in progress somewhere in the dock. */
   dragging: boolean;
+  gamePaused: boolean;
   onLaunch: (item: DockItemView, target?: HTMLElement) => void;
   onContext: (item: DockItemView, target: HTMLElement) => void;
 }
@@ -84,10 +85,31 @@ export function DockIcon({
   vertical,
   edge,
   dragging,
+  gamePaused,
   onLaunch,
   onContext,
 }: DockIconProps) {
   const ref = useRef<HTMLButtonElement>(null);
+  const labelRef = useRef<HTMLSpanElement>(null);
+  const imageRef = useRef<HTMLImageElement>(null);
+  const [solidIconSrc, setSolidIconSrc] = useState<string | null>(null);
+  const classifyIcon = useCallback(() => {
+    const img = imageRef.current;
+    if (!img?.complete || !img.naturalWidth) return;
+    // An opaque square already has its own background. Fill the rounded
+    // tile with it instead of adding a second white frame around the image.
+    try {
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = 8;
+      const context = canvas.getContext("2d");
+      if (!context) return;
+      context.drawImage(img, 0, 0, 8, 8);
+      const pixels = context.getImageData(0, 0, 8, 8).data;
+      const opaque = [0, 7, 56, 63].every((index) => pixels[index * 4 + 3] > 240);
+      setSolidIconSrc(opaque ? item.iconSrc : null);
+    } catch { setSolidIconSrc(null); }
+  }, [item.iconSrc]);
+  useLayoutEffect(classifyIcon, [classifyIcon]);
   const [hovered, setHovered] = useState(false);
   const [failedIconSrc, setFailedIconSrc] = useState<string | null>(null);
   // a flyout already names what you're pointing at, and the pill would
@@ -114,19 +136,29 @@ export function DockIcon({
 
   const reach = iconSize * 2.6;
   const peak = magnify ? magScale : 1;
-  const targetWidth = useTransform(distance, [-reach, 0, reach], [
-    iconSize,
-    iconSize * peak,
-    iconSize,
-  ]);
-  const width = useSpring(targetWidth, springs.magnify);
+  const targetScale = useTransform(distance, [-reach, 0, reach], [1, peak, 1]);
+  const scale = useSpring(targetScale, springs.magnify);
 
   // When a drag starts, every icon springs back to its base size. Letting
   // that animate resizes tiles under the cursor mid-drag, which is a big
   // part of what felt like lag, so jump straight to the end value.
   useEffect(() => {
-    if (dragging) width.jump(iconSize);
-  }, [dragging, iconSize, width]);
+    if (dragging || gamePaused) scale.jump(1);
+  }, [dragging, gamePaused, scale]);
+
+  // The label can be wider than an end icon's available space. Keep its
+  // actual rendered bounds inside the WebView instead of truncating names.
+  useLayoutEffect(() => {
+    if (!hovered || vertical) return;
+    const label = labelRef.current;
+    const icon = ref.current;
+    if (!label || !icon) return;
+    const bounds = icon.getBoundingClientRect();
+    const labelWidth = label.offsetWidth;
+    const left = bounds.left + bounds.width / 2 - labelWidth / 2;
+    const shift = Math.max(12 - left, Math.min(0, window.innerWidth - 12 - left - labelWidth));
+    label.style.setProperty("--label-shift", `${shift}px`);
+  }, [hovered, item.name, vertical]);
 
   const handleClick = useCallback(
     (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -141,9 +173,9 @@ export function DockIcon({
     <motion.button
       ref={ref}
       className="dock-icon"
-      style={vertical ? { height: width, width: "var(--icon-size)" } : { width }}
-      whileTap={{ scale: 0.96 }}
-      transition={{ type: "spring", stiffness: 800, damping: 42, mass: 0.25 }}
+      data-dock-item={item.id}
+      whileTap={gamePaused ? undefined : { scale: 0.96 }}
+      transition={gamePaused ? { duration: 0 } : { type: "spring", stiffness: 800, damping: 42, mass: 0.25 }}
       onClick={handleClick}
       onContextMenu={(e) => {
         e.preventDefault();
@@ -172,9 +204,9 @@ export function DockIcon({
         <motion.span
           className="dock-label dock-volume-pill"
           data-edge={edge}
-          initial={{ opacity: 0, scale: 0.98, ...labelFrom(edge) }}
+          initial={gamePaused ? false : { opacity: 0, scale: 0.98, ...labelFrom(edge) }}
           animate={{ opacity: 1, scale: 1, x: 0, y: 0 }}
-          transition={{ duration: 0.12, ease: "easeOut" }}
+          transition={gamePaused ? { duration: 0 } : { duration: 0.12, ease: "easeOut" }}
         >
           <Speaker muted={audio.muted} />
           <span className="dock-volume-value">
@@ -192,17 +224,18 @@ export function DockIcon({
         !flyoutOpen &&
         !dragging && (
           <motion.span
+            ref={labelRef}
             className="dock-label"
             data-edge={edge}
-            initial={{ opacity: 0, scale: 0.98, ...labelFrom(edge) }}
+            initial={gamePaused ? false : { opacity: 0, scale: 0.98, ...labelFrom(edge) }}
             animate={{ opacity: 1, scale: 1, x: 0, y: 0 }}
-            transition={{ duration: 0.12, ease: "easeOut" }}
+            transition={gamePaused ? { duration: 0 } : { duration: 0.12, ease: "easeOut" }}
           >
             {item.name}
           </motion.span>
         )
       )}
-      <span className="dock-icon-float">
+      <motion.span className="dock-icon-float" data-solid-icon={!!item.iconSrc && solidIconSrc === item.iconSrc} style={{ scale: gamePaused ? 1 : scale }}>
         {item.kind === "stack" ? (
           <span className="dock-stack">
             {item.children.slice(0, 4).map((child, i) =>
@@ -214,11 +247,11 @@ export function DockIcon({
             )}
           </span>
         ) : item.iconSrc && item.iconSrc !== failedIconSrc ? (
-          <img src={item.iconSrc} alt="" draggable={false} onError={() => setFailedIconSrc(item.iconSrc)} />
+          <img ref={imageRef} src={item.iconSrc} alt="" draggable={false} onLoad={classifyIcon} onError={() => setFailedIconSrc(item.iconSrc)} />
         ) : (
           <span className="dock-icon-glyph">{initial}</span>
         )}
-      </span>
+      </motion.span>
       {audio?.muted && (
         <span className="dock-muted-badge" title={`${item.name} is muted`}>
           <Speaker muted />

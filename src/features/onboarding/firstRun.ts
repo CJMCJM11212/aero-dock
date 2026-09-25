@@ -50,6 +50,8 @@ export async function importStarterApps(): Promise<void> {
     id: `pin-${crypto.randomUUID()}`,
     kind: "app",
     path: app.targetPath,
+    args: app.args,
+    iconSource: app.shortcutPath || app.targetPath,
     name: app.name,
     icon: app.icon,
     children: [],

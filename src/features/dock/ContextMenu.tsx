@@ -5,16 +5,15 @@
 
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
-import { springs } from "../../engine/animation/springs";
 import { ipc } from "../../ipc/commands";
 import { notify } from "../feedback/toastStore";
 import type { AudioDevice, Settings } from "../../ipc/types";
 import { exeKey, useAppAudio } from "../../state/audioStore";
 import type { DockItemView } from "../../state/dockStore";
-import { bloomOffset, flyoutStyle, useMenu } from "./menuStore";
+import { flyoutStyle, useMenu } from "./menuStore";
 import "./contextmenu.css";
 
-const MENU_WIDTH = 240;
+const MENU_WIDTH = 256;
 
 /** The output an app is set to in the active mode, if any. */
 function chosenDevice(settings: Settings, exe: string): string | null {
@@ -49,7 +48,7 @@ async function stackWithPrevious(settings: Settings, itemId: string): Promise<un
       id: `pin-${crypto.randomUUID()}`,
       kind: "stack",
       path: "",
-      name: `${prev.name} & more`,
+      name: `${prev.name} 그룹`,
       icon: null,
       children: [prev, current],
     };
@@ -77,13 +76,13 @@ function buildActions(item: DockItemView, settings: Settings): Action[] {
 
   // stacks have their own compact menu
   if (item.kind === "stack") {
-    actions.push({ label: "Unstack", run: () => unstack(settings, item.id) });
+    actions.push({ label: "그룹 해제", run: () => unstack(settings, item.id) });
     actions.push({
-      label: "Unpin from Dock",
+      label: "도크에서 제거",
       run: () => ipc.unpinItem(item.id),
     });
     actions.push({
-      label: "Dock settings…",
+      label: "도크 설정…",
       separatorAbove: true,
       run: () => ipc.openSettings(),
     });
@@ -91,21 +90,21 @@ function buildActions(item: DockItemView, settings: Settings): Action[] {
   }
 
   actions.push({
-    label: item.windows.length > 0 ? "New window" : "Open",
+    label: item.windows.length > 0 ? "새 창 열기" : "열기",
     run: () => ipc.launch(item.target, item.args),
   });
   actions.push({
-    label: "Run as administrator",
+    label: "관리자 권한으로 실행",
     run: () => ipc.launchAsAdmin(item.target, item.args),
   });
   actions.push({
-    label: "Open file location",
+    label: "파일 위치 열기",
     run: () => ipc.openFileLocation(item.target),
   });
 
   if (item.pinned) {
     actions.push({
-      label: "Unpin from Dock",
+      label: "도크에서 제거",
       separatorAbove: true,
       run: () => ipc.unpinItem(item.id),
     });
@@ -114,14 +113,14 @@ function buildActions(item: DockItemView, settings: Settings): Action[] {
       actions.push({
         label:
           settings.pinned[idx - 1].kind === "stack"
-            ? "Add to stack on the left"
-            : "Stack with previous item",
+            ? "왼쪽 그룹에 추가"
+            : "왼쪽 앱과 그룹 만들기",
         run: () => stackWithPrevious(settings, item.id),
       });
     }
   } else {
     actions.push({
-      label: "Pin to Dock",
+      label: "도크에 고정",
       separatorAbove: true,
       run: () =>
         ipc.pinItem(
@@ -139,25 +138,25 @@ function buildActions(item: DockItemView, settings: Settings): Action[] {
   }
 
   actions.push({
-    label: "Dock settings…",
+    label: "도크 설정…",
     separatorAbove: true,
     run: () => ipc.openSettings(),
   });
 
   if (item.windows.length === 1) {
     actions.push({
-      label: "Minimize",
+      label: "최소화",
       separatorAbove: true,
       run: () => ipc.minimizeWindow(item.windows[0].hwnd),
     });
     actions.push({
-      label: "Close window",
+      label: "창 닫기",
       danger: true,
       run: () => ipc.closeWindow(item.windows[0].hwnd),
     });
   } else if (item.windows.length > 1) {
     actions.push({
-      label: `Close all (${item.windows.length})`,
+      label: `창 모두 닫기 (${item.windows.length})`,
       danger: true,
       separatorAbove: true,
       run: () => Promise.all(item.windows.map((w) => ipc.closeWindow(w.hwnd))),
@@ -194,10 +193,26 @@ export function ContextMenu({ settings, edge }: ContextMenuProps) {
   useEffect(() => {
     if (!item) return;
     const onDown = (e: MouseEvent) => {
+      // Right-click switches the existing menu at contextmenu time. Closing
+      // on its preceding mousedown shrinks and regrows the native WebView.
+      if (e.button === 2 && (e.target as HTMLElement).closest(".dock-icon")) return;
       if (!(e.target as HTMLElement).closest(".aero-menu")) close();
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close();
+      if (e.key === "Escape") {
+        close();
+        [...document.querySelectorAll<HTMLElement>("[data-dock-item]")]
+          .find((el) => el.dataset.dockItem === item.id)?.focus({ preventScroll: true });
+      }
+      if (["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) {
+        e.preventDefault();
+        const buttons = [...document.querySelectorAll<HTMLButtonElement>(".aero-menu button")];
+        const current = buttons.indexOf(document.activeElement as HTMLButtonElement);
+        const index = e.key === "Home" ? 0 : e.key === "End" ? buttons.length - 1
+          : (current + (e.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length;
+        buttons[index]?.focus({ preventScroll: true });
+        buttons[index]?.scrollIntoView({ block: "nearest" });
+      }
     };
     // clicks outside the OS window never reach us, so also dismiss when
     // the cursor leaves the window and doesn't come back promptly
@@ -208,39 +223,42 @@ export function ContextMenu({ settings, edge }: ContextMenuProps) {
     const onEnter = () => clearTimeout(leaveTimer);
     window.addEventListener("mousedown", onDown);
     window.addEventListener("keydown", onKey);
+    window.addEventListener("blur", close);
     document.documentElement.addEventListener("mouseleave", onLeave);
     document.documentElement.addEventListener("mouseenter", onEnter);
     return () => {
       clearTimeout(leaveTimer);
       window.removeEventListener("mousedown", onDown);
       window.removeEventListener("keydown", onKey);
+      window.removeEventListener("blur", close);
       document.documentElement.removeEventListener("mouseleave", onLeave);
       document.documentElement.removeEventListener("mouseenter", onEnter);
     };
   }, [item, close]);
 
-  const style = anchor ? flyoutStyle(edge, anchor, MENU_WIDTH, 12, 360) : {};
-  const bloomFrom = bloomOffset(edge);
+  const style = anchor ? flyoutStyle(edge, anchor, MENU_WIDTH, 12, 440) : {};
 
   return (
     <AnimatePresence>
       {item && anchor && (
         <motion.div
-          className="aero-menu glass"
+          className="aero-menu"
+          role="menu"
+          aria-label={`${item.name} 메뉴`}
           style={style}
-          initial={{ opacity: 0, scale: 0.82, ...bloomFrom }}
+          initial={{ opacity: 0, y: edge === "bottom" ? 4 : -4 }}
           animate={{ opacity: 1, scale: 1, x: 0, y: 0 }}
-          exit={{ opacity: 0, scale: 0.94, filter: "blur(6px)", transition: { duration: 0.18 } }}
-          transition={springs.bloom}
+          exit={{ opacity: 0, transition: { duration: 0 } }}
+          transition={{ duration: 0.12, ease: "easeOut" }}
         >
           {item.windows.length > 1 && (
             <div className="aero-menu-windows">
               {item.windows.slice(0, 6).map((w) => (
-                <button
+                <button role="menuitem"
                   key={w.hwnd}
                   className="aero-menu-item aero-menu-window"
                   onClick={() => {
-                    ipc.activateWindow(w.hwnd).catch(notify.on("Could not focus that window"));
+                    ipc.activateWindow(w.hwnd).catch(notify.on("창을 활성화하지 못했어요"));
                     close();
                   }}
                 >
@@ -253,37 +271,37 @@ export function ContextMenu({ settings, edge }: ContextMenuProps) {
           {item.kind !== "stack" && (
             <div className="aero-menu-audio">
               {audio && (
-                <button
+                <button role="menuitem"
                   className="aero-menu-item"
                   onClick={() => {
                     void toggleMute(item.audioExe);
                     close();
                   }}
                 >
-                  {audio.muted ? "Unmute" : "Mute"}
+                  {audio.muted ? "음소거 해제" : "음소거"}
                   <span className="aero-menu-hint">
-                    {audio.muted ? "muted" : `${audio.volume}%`}
+                    {audio.muted ? "음소거됨" : `${audio.volume}%`}
                   </span>
                 </button>
               )}
-              <button
+              <button role="menuitem"
                 className="aero-menu-item"
                 aria-expanded={showDevices}
                 onClick={() => setShowDevices((v) => !v)}
               >
-                Audio output
-                <span className="aero-menu-hint">{showDevices ? "hide" : "choose"}</span>
+                소리 출력
+                <span className="aero-menu-hint">{showDevices ? "접기" : "선택"}</span>
               </button>
               {showDevices && (
                 <div className="aero-menu-devices">
                   {devices.length === 0 && (
-                    <div className="aero-menu-note">Looking for outputs…</div>
+                    <div className="aero-menu-note">출력 장치를 찾는 중…</div>
                   )}
                   {devices.map((d) => {
                     const current = chosenDevice(settings, item.audioExe);
                     const active = current === null ? d.isDefault : current === d.id;
                     return (
-                      <button
+                      <button role="menuitem"
                         key={d.id}
                         className="aero-menu-item aero-menu-device"
                         data-active={active}
@@ -293,24 +311,23 @@ export function ContextMenu({ settings, edge }: ContextMenuProps) {
                             .then((choice) => {
                               if (choice.openedSettings) {
                                 notify.info(
-                                  `Saved. Pick ${d.name} for ${item.name} in the Windows page that just opened.`,
+                                  `열린 Windows 설정에서 ${item.name}의 출력 장치를 ${d.name}(으)로 선택하세요.`,
                                 );
                               } else {
-                                notify.info(`Saved ${d.name} for ${item.name}.`);
+                                notify.info(`${item.name}의 출력 장치를 ${d.name}(으)로 저장했어요.`);
                               }
                             })
-                            .catch(notify.on("Could not set the audio output"));
+                            .catch(notify.on("소리 출력을 변경하지 못했어요"));
                           close();
                         }}
                       >
                         <span className="aero-menu-device-name">{d.name}</span>
-                        {d.isDefault && <span className="aero-menu-hint">system</span>}
+                        {d.isDefault && <span className="aero-menu-hint">기본</span>}
                       </button>
                     );
                   })}
                   <div className="aero-menu-note">
-                    Windows performs the routing itself, so the last step happens
-                    on its own settings page.
+                    출력 장치 연결은 Windows 설정에서 마무리할 수 있어요.
                   </div>
                 </div>
               )}
@@ -320,12 +337,12 @@ export function ContextMenu({ settings, edge }: ContextMenuProps) {
           {buildActions(item, settings).map((action) => (
             <div key={action.label}>
               {action.separatorAbove && <div className="aero-menu-separator" />}
-              <button
+              <button role="menuitem"
                 className="aero-menu-item"
                 data-danger={action.danger}
                 onClick={() => {
                   Promise.resolve(action.run()).catch(
-                    notify.on(`"${action.label}" failed`),
+                    notify.on(`“${action.label}” 실행 실패`),
                   );
                   close();
                 }}

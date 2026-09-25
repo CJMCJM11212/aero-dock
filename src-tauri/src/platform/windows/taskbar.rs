@@ -77,6 +77,7 @@ fn show_taskbars(visible: bool) {
 
 /// `hide = true` takes the taskbar off screen; `false` puts it back.
 pub fn set_taskbar_autohide(hide: bool) {
+    if std::env::var_os("AERO_DOCK_PREVIEW").is_some() { return; }
     set_appbar_state(hide);
     show_taskbars(!hide);
 }
@@ -84,6 +85,7 @@ pub fn set_taskbar_autohide(hide: bool) {
 /// Force the taskbar visible regardless of current state. Called on quit
 /// and at startup, so an unclean exit cannot strand the user without one.
 pub fn restore_taskbar() {
+    if std::env::var_os("AERO_DOCK_PREVIEW").is_some() { return; }
     set_appbar_state(false);
     show_taskbars(true);
 }

@@ -55,6 +55,8 @@ export interface PinnedItem {
   id: string;
   kind: PinKind;
   path: string;
+  args?: string;
+  iconSource?: string | null;
   name: string;
   icon: string | null;
   children: PinnedItem[];
@@ -158,6 +160,7 @@ export interface WindowInfo {
 export interface RunningSnapshot {
   windows: WindowInfo[];
   focused: number;
+  immersiveActive: boolean;
 }
 
 export interface RecentFile {
