@@ -7,7 +7,6 @@
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useEffect, useMemo } from "react";
 import { DockBar } from "../features/dock/DockBar";
-import { EffectsLayer } from "../engine/effects/EffectsLayer";
 import { applyAppearance } from "../engine/themes/applyTheme";
 import { notify } from "../features/feedback/toastStore";
 import { ipc } from "../ipc/commands";
@@ -173,9 +172,6 @@ export function DockApp() {
   };
 
   return (
-    <>
-      <EffectsLayer settings={settings} />
-      <DockBar settings={settings} items={items} onLaunch={activate} />
-    </>
+    <DockBar settings={settings} items={items} onLaunch={activate} />
   );
 }

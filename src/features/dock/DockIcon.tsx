@@ -1,19 +1,15 @@
 /**
- * A single dock icon: cursor-distance magnification, hover label,
- * launch bounce, idle float. All motion is springs on transform.
+ * A single dock icon: cursor-distance magnification and direct press feedback.
  */
 
 import {
-  animate,
   motion,
-  useMotionValue,
   useSpring,
   useTransform,
   type MotionValue,
 } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { springs } from "../../engine/animation/springs";
-import { effectsBus } from "../../engine/effects/effectsBus";
 import type { DockEdge } from "../../ipc/types";
 import type { DockItemView } from "../../state/dockStore";
 import { exeKey, useAppAudio } from "../../state/audioStore";
@@ -30,7 +26,6 @@ interface DockIconProps {
   edge: DockEdge;
   /** A reorder drag is in progress somewhere in the dock. */
   dragging: boolean;
-  index: number;
   onLaunch: (item: DockItemView, target?: HTMLElement) => void;
   onContext: (item: DockItemView, target: HTMLElement) => void;
   /** Fired after dwelling on an icon that has open windows. */
@@ -96,13 +91,13 @@ export function DockIcon({
   vertical,
   edge,
   dragging,
-  index,
   onLaunch,
   onContext,
   onHoverPreview,
 }: DockIconProps) {
   const ref = useRef<HTMLButtonElement>(null);
   const [hovered, setHovered] = useState(false);
+  const [failedIconSrc, setFailedIconSrc] = useState<string | null>(null);
   // a flyout already names what you're pointing at, and the pill would
   // otherwise float over its bottom edge
   const flyoutOpen = useMenu((m) => m.item !== null);
@@ -145,28 +140,11 @@ export function DockIcon({
     if (dragging) width.jump(iconSize);
   }, [dragging, iconSize, width]);
 
-  // launch bounce (offset perpendicular to the dock edge); idle float
-  // is pure CSS on the inner wrapper — zero JS per frame
-  const bounce = useMotionValue(0);
-  const y = useTransform(bounce, (b) => (vertical ? 0 : b));
-  const x = useTransform(bounce, (b) => (vertical ? b : 0));
-
   const handleClick = useCallback(
     (e: React.MouseEvent<HTMLButtonElement>) => {
-      // water-drop bounce away from the edge, then settle
-      animate(bounce, vertical ? -14 : -22, springs.bounce).then(() =>
-        animate(bounce, 0, springs.bounce),
-      );
-      const r = e.currentTarget.getBoundingClientRect();
-      const cx = r.left + r.width / 2;
-      const win = { winW: window.innerWidth, winH: window.innerHeight };
-      effectsBus.emit("ripple", { x: cx, y: r.bottom - 4, ...win });
-      if (item.windows.length === 0 && item.kind !== "folder") {
-        effectsBus.emit("burst", { x: cx, y: r.top + r.height / 2, ...win });
-      }
       onLaunch(item, e.currentTarget);
     },
-    [bounce, item, onLaunch, vertical],
+    [item, onLaunch],
   );
 
   const initial = item.name.trim().charAt(0).toUpperCase() || "?";
@@ -175,7 +153,9 @@ export function DockIcon({
     <motion.button
       ref={ref}
       className="dock-icon"
-      style={vertical ? { height: width, width: "var(--icon-size)", x, y } : { width, x, y }}
+      style={vertical ? { height: width, width: "var(--icon-size)" } : { width }}
+      whileTap={{ scale: 0.96 }}
+      transition={{ type: "spring", stiffness: 800, damping: 42, mass: 0.25 }}
       onClick={handleClick}
       onContextMenu={(e) => {
         e.preventDefault();
@@ -232,9 +212,9 @@ export function DockIcon({
         <motion.span
           className="dock-label dock-volume-pill"
           data-edge={edge}
-          initial={{ opacity: 0, scale: 0.9, ...labelFrom(edge) }}
+          initial={{ opacity: 0, scale: 0.98, ...labelFrom(edge) }}
           animate={{ opacity: 1, scale: 1, x: 0, y: 0 }}
-          transition={springs.bloom}
+          transition={{ duration: 0.12, ease: "easeOut" }}
         >
           <Speaker muted={audio.muted} />
           <span className="dock-volume-value">
@@ -254,18 +234,15 @@ export function DockIcon({
           <motion.span
             className="dock-label"
             data-edge={edge}
-            initial={{ opacity: 0, scale: 0.9, ...labelFrom(edge) }}
+            initial={{ opacity: 0, scale: 0.98, ...labelFrom(edge) }}
             animate={{ opacity: 1, scale: 1, x: 0, y: 0 }}
-            transition={springs.bloom}
+            transition={{ duration: 0.12, ease: "easeOut" }}
           >
             {item.name}
           </motion.span>
         )
       )}
-      <span
-        className="dock-icon-float"
-        style={{ animationDelay: `${(index * -0.9).toFixed(2)}s` }}
-      >
+      <span className="dock-icon-float">
         {item.kind === "stack" ? (
           <span className="dock-stack">
             {item.children.slice(0, 4).map((child, i) =>
@@ -276,8 +253,8 @@ export function DockIcon({
               ),
             )}
           </span>
-        ) : item.iconSrc ? (
-          <img src={item.iconSrc} alt="" draggable={false} />
+        ) : item.iconSrc && item.iconSrc !== failedIconSrc ? (
+          <img src={item.iconSrc} alt="" draggable={false} onError={() => setFailedIconSrc(item.iconSrc)} />
         ) : (
           <span className="dock-icon-glyph">{initial}</span>
         )}

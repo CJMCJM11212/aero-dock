@@ -37,7 +37,6 @@ const EDGE_SLACK = 24; // window slack so magnified end-icons never clip
 const MENU_SPACE = 360; // extra cross-axis room while a context menu is open
 const FLYOUT_GAP = 16; // breathing room between a flyout and the window edge
 const TOAST_SPACE = 210; // extra cross-axis room while toasts are on screen
-const WIDGET_SPACE = 190; // clock + status glyphs + search & gear buttons
 const MODE_TILE_SPACE = 38; // the Modes tile, when Modes is switched on
 const REVEAL_STRIP = 8; // window height while auto-hidden (mouse sensor)
 // fallback only; the real delay is settings.dock.autoHideDelayMs
@@ -155,8 +154,13 @@ export function DockBar({ settings, items, onLaunch }: DockBarProps) {
     const mainBase = n * iconSize + (n - 1 + dividers) * GAP + dividers * 8 + PAD_MAIN * 2;
     // neighbors near the cursor grow too; ~2.5 icons' worth covers the worst case
     const mainGrowth = iconSize * (peak - 1) * 2.5;
-    const main =
-      mainBase + mainGrowth + EDGE_SLACK + WIDGET_SPACE + (modesOn ? MODE_TILE_SPACE : 0);
+    const auxiliarySpace =
+      (settings.dock.showSearchButton ? 48 : 0) +
+      (settings.dock.showSettingsButton ? 48 : 0) +
+      (settings.dock.showClock ? 90 : 0) +
+      (settings.dock.showSystemStatus ? 65 : 0);
+    const main = mainBase + mainGrowth + EDGE_SLACK + auxiliarySpace +
+      (modesOn ? MODE_TILE_SPACE : 0);
     const label = vertical ? LABEL_SPACE_SIDE : LABEL_SPACE;
     // The dock band itself: icons at full magnification plus tooltip room.
     const band = iconSize * peak + PAD_CROSS * 2 + label;
@@ -189,6 +193,10 @@ export function DockBar({ settings, items, onLaunch }: DockBarProps) {
     windowShrunk,
     modesOn,
     modesOpen,
+    settings.dock.showSearchButton,
+    settings.dock.showSettingsButton,
+    settings.dock.showClock,
+    settings.dock.showSystemStatus,
   ]);
 
   useEffect(() => {
@@ -292,7 +300,7 @@ export function DockBar({ settings, items, onLaunch }: DockBarProps) {
           values={order}
           onReorder={setOrder}
         >
-          {orderedPinned.map((item, i) => (
+          {orderedPinned.map((item) => (
             <Reorder.Item
               as="div"
               key={item.id}
@@ -318,13 +326,13 @@ export function DockBar({ settings, items, onLaunch }: DockBarProps) {
                 }, 50);
               }}
             >
-              <DockIcon item={item} index={i} {...iconProps} />
+              <DockIcon item={item} {...iconProps} />
             </Reorder.Item>
           ))}
         </Reorder.Group>
         {runningItems.length > 0 && <span className="dock-divider" aria-hidden />}
-        {runningItems.map((item, i) => (
-          <DockIcon key={item.id} item={item} index={orderedPinned.length + i} {...iconProps} />
+        {runningItems.map((item) => (
+          <DockIcon key={item.id} item={item} {...iconProps} />
         ))}
         {(settings.dock.showClock || settings.dock.showSystemStatus) && (
           <span className="dock-divider" aria-hidden />
