@@ -150,7 +150,7 @@ export function DockBar({ settings, items, onLaunch }: DockBarProps) {
   // Deterministic window size: no ResizeObserver, no feedback loops.
   const windowSize = useMemo(() => {
     const n = Math.max(items.length, 1);
-    const dividers = runningItems.length > 0 ? 1 : 0;
+    const dividers = runningItems.length > 0 && pinnedItems.length > 0 ? 1 : 0;
     const mainBase = n * iconSize + (n - 1 + dividers) * GAP + dividers * 8 + PAD_MAIN * 2;
     // neighbors near the cursor grow too; ~2.5 icons' worth covers the worst case
     const mainGrowth = iconSize * (peak - 1) * 2.5;
@@ -330,7 +330,9 @@ export function DockBar({ settings, items, onLaunch }: DockBarProps) {
             </Reorder.Item>
           ))}
         </Reorder.Group>
-        {runningItems.length > 0 && <span className="dock-divider" aria-hidden />}
+        {runningItems.length > 0 && pinnedItems.length > 0 && (
+          <span className="dock-divider" aria-hidden />
+        )}
         {runningItems.map((item) => (
           <DockIcon key={item.id} item={item} {...iconProps} />
         ))}
