@@ -28,14 +28,7 @@ interface DockIconProps {
   dragging: boolean;
   onLaunch: (item: DockItemView, target?: HTMLElement) => void;
   onContext: (item: DockItemView, target: HTMLElement) => void;
-  /** Fired after dwelling on an icon that has open windows. */
-  onHoverPreview: (item: DockItemView, target: HTMLElement) => void;
 }
-
-const PREVIEW_DWELL_MS = 550;
-/** How long a scroll keeps the window previews away. Matches the volume
- *  indicator's own lifetime so the two never overlap. */
-const VOLUME_PREVIEW_MUTE_MS = 1500;
 
 /** Speaker with the waves dropped when muted, drawn to match the glass
  *  controls rather than a font glyph. */
@@ -93,7 +86,6 @@ export function DockIcon({
   dragging,
   onLaunch,
   onContext,
-  onHoverPreview,
 }: DockIconProps) {
   const ref = useRef<HTMLButtonElement>(null);
   const [hovered, setHovered] = useState(false);
@@ -101,10 +93,6 @@ export function DockIcon({
   // a flyout already names what you're pointing at, and the pill would
   // otherwise float over its bottom edge
   const flyoutOpen = useMenu((m) => m.item !== null);
-  const dwellTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  // While the volume is being adjusted the window previews stay out of the
-  // way. They are a hover affordance, and a deliberate scroll outranks one.
-  const previewMutedUntil = useRef(0);
 
   // per-app audio: scroll to change, middle-click to mute
   const audio = useAppAudio((a) => a.levels[exeKey(item.audioExe)]);
@@ -165,12 +153,6 @@ export function DockIcon({
         // one notch per detent, up scrolls louder
         const notches = -Math.sign(e.deltaY);
         if (notches === 0) return;
-        // a preview opened by hovering would sit right on top of the
-        // readout, so retire it and keep it away while the pill is up
-        clearTimeout(dwellTimer.current);
-        previewMutedUntil.current = Date.now() + VOLUME_PREVIEW_MUTE_MS;
-        const m = useMenu.getState();
-        if (m.kind === "windows" && m.item?.id === item.id) m.close();
         void nudgeVolume(item.audioExe, notches);
       }}
       onMouseDown={(e) => {
@@ -182,30 +164,8 @@ export function DockIcon({
         e.preventDefault();
         void toggleMute(item.audioExe);
       }}
-      onMouseEnter={(e) => {
-        setHovered(true);
-        const m = useMenu.getState();
-        if (m.kind === "windows" && m.item?.id === item.id) {
-          // back onto the icon that owns the open preview: keep it
-          m.cancelScheduledClose();
-        } else if (item.windows.length > 0) {
-          const el = e.currentTarget;
-          dwellTimer.current = setTimeout(() => {
-            if (Date.now() < previewMutedUntil.current) return;
-            onHoverPreview(item, el);
-          }, PREVIEW_DWELL_MS);
-        }
-      }}
-      onMouseLeave={() => {
-        setHovered(false);
-        clearTimeout(dwellTimer.current);
-        // leaving the icon that owns the open preview: dismiss it soon
-        // unless the cursor lands on the flyout itself
-        const m = useMenu.getState();
-        if (m.kind === "windows" && m.item?.id === item.id) {
-          m.scheduleClose(450);
-        }
-      }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       aria-label={item.name}
     >
       {adjusting && audio ? (

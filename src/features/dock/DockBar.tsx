@@ -6,7 +6,7 @@
  */
 
 import { AnimatePresence, motion, Reorder, useMotionValue } from "motion/react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from "react";
 import { springs } from "../../engine/animation/springs";
 import { ipc } from "../../ipc/commands";
 import { Toasts } from "../feedback/Toasts";
@@ -15,6 +15,7 @@ import type { Settings } from "../../ipc/types";
 import type { DockItemView } from "../../state/dockStore";
 import { useAmbient } from "../../state/ambientStore";
 import { useFileDrag } from "../../state/dragStore";
+import { useSettings } from "../../state/settingsStore";
 import { Welcome } from "../onboarding/Welcome";
 import { SEARCH_PANEL, SearchOverlay, useSearch } from "../search/SearchOverlay";
 import { WidgetCluster } from "../widgets/WidgetCluster";
@@ -24,12 +25,11 @@ import { MODE_FLYOUT_HEIGHT, ModeSwitcher, useModeSwitcher } from "./ModeSwitche
 import { DockIcon } from "./DockIcon";
 import { FolderFlyout } from "./FolderFlyout";
 import { StackFlyout } from "./StackFlyout";
-import { WindowsFlyout } from "./WindowsFlyout";
 import { anchorFor, useMenu } from "./menuStore";
 import "./dock.css";
 
-const GAP = 6;
-const PAD_MAIN = 18; // dock padding along the axis
+const GAP = 18;
+const PAD_MAIN = 30; // dock padding along the axis, including the resize corner
 const PAD_CROSS = 10; // dock padding across the axis
 const LABEL_SPACE = 44; // tooltip pill above icons (horizontal dock)
 const LABEL_SPACE_SIDE = 150; // tooltip pill beside icons (vertical dock)
@@ -44,6 +44,8 @@ const HIDE_ANIM_MS = 380;
 // ambient animations (float, sweep) pause after this much no-interaction
 // so an idle dock costs ~zero GPU; they wake the moment the cursor returns
 const SLEEP_AFTER_MS = 45_000;
+const MIN_ICON_SIZE = 32;
+const MAX_ICON_SIZE = 128;
 
 interface DockBarProps {
   settings: Settings;
@@ -52,7 +54,11 @@ interface DockBarProps {
 }
 
 export function DockBar({ settings, items, onLaunch }: DockBarProps) {
-  const { edge, iconSize, magnification, magnificationScale } = settings.dock;
+  const { edge, magnification, magnificationScale } = settings.dock;
+  const [resizeSize, setResizeSize] = useState<number | null>(null);
+  const [resizing, setResizing] = useState(false);
+  const resizeRef = useRef<{ pointerId: number; startAxis: number; startSize: number; currentSize: number } | null>(null);
+  const iconSize = resizeSize ?? settings.dock.iconSize;
   const vertical = edge === "left" || edge === "right";
   const mouseAxis = useMotionValue(Infinity);
   const menu = useMenu();
@@ -105,13 +111,13 @@ export function DockBar({ settings, items, onLaunch }: DockBarProps) {
   const sleepTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => {
     clearTimeout(sleepTimer.current);
-    if (pointerInside || menuOpen || fileDragOver) {
+    if (pointerInside || menuOpen || fileDragOver || resizing) {
       setAsleep(false);
       return;
     }
     sleepTimer.current = setTimeout(() => setAsleep(true), SLEEP_AFTER_MS);
     return () => clearTimeout(sleepTimer.current);
-  }, [pointerInside, menuOpen, fileDragOver, setAsleep]);
+  }, [pointerInside, menuOpen, fileDragOver, resizing, setAsleep]);
 
   // Asleep is also when the dock hands memory back. Chromium keeps its
   // raster caches until told otherwise; on a real desktop this took the
@@ -131,7 +137,7 @@ export function DockBar({ settings, items, onLaunch }: DockBarProps) {
       setWindowShrunk(false);
       return;
     }
-    if (pointerInside || menuOpen || fileDragOver) {
+    if (pointerInside || menuOpen || fileDragOver || resizing) {
       setHidden(false);
       setWindowShrunk(false);
       return;
@@ -145,7 +151,7 @@ export function DockBar({ settings, items, onLaunch }: DockBarProps) {
       clearTimeout(hideTimer.current);
       clearTimeout(shrinkTimer.current);
     };
-  }, [autoHide, pointerInside, menuOpen, fileDragOver, autoHideDelay]);
+  }, [autoHide, pointerInside, menuOpen, fileDragOver, resizing, autoHideDelay]);
 
   // Deterministic window size: no ResizeObserver, no feedback loops.
   const windowSize = useMemo(() => {
@@ -209,7 +215,7 @@ export function DockBar({ settings, items, onLaunch }: DockBarProps) {
 
   const handleMove = useCallback(
     (e: React.MouseEvent) => {
-      if (!draggingRef.current) mouseAxis.set(vertical ? e.clientY : e.clientX);
+      if (!draggingRef.current && !resizeRef.current) mouseAxis.set(vertical ? e.clientY : e.clientX);
     },
     [mouseAxis, vertical],
   );
@@ -236,21 +242,9 @@ export function DockBar({ settings, items, onLaunch }: DockBarProps) {
         menu.open("stack", item, anchorFor(target));
         return;
       }
-      // several windows: show them instead of blind-cycling
-      if (item.windows.length > 1 && target) {
-        menu.open("windows", item, anchorFor(target));
-        return;
-      }
       onLaunch(item);
     },
     [onLaunch, menu],
-  );
-
-  const openPreview = useCallback(
-    (item: DockItemView, target: HTMLElement) => {
-      if (!draggingRef.current) menu.open("windows", item, anchorFor(target));
-    },
-    [menu],
   );
 
   const iconProps = {
@@ -260,11 +254,66 @@ export function DockBar({ settings, items, onLaunch }: DockBarProps) {
     magScale: magnificationScale,
     vertical,
     edge,
-    dragging,
+    dragging: dragging || resizing,
     onLaunch: launchGuarded,
     onContext: openMenu,
-    onHoverPreview: openPreview,
   };
+
+  const saveIconSize = useCallback(async (size: number) => {
+    const before = useSettings.getState().settings;
+    if (!before || size === before.dock.iconSize) {
+      setResizeSize(null);
+      return;
+    }
+    try {
+      await useSettings.getState().apply((draft) => { draft.dock.iconSize = size; });
+    } catch (error) {
+      useSettings.setState({ settings: before });
+      notify.error("Could not save dock size", error);
+    } finally {
+      setResizeSize(null);
+    }
+  }, []);
+
+  const startResize = useCallback((e: PointerEvent<HTMLButtonElement>) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    menu.close();
+    mouseAxis.set(Infinity);
+    resizeRef.current = {
+      pointerId: e.pointerId,
+      startAxis: vertical ? e.screenY : e.screenX,
+      startSize: iconSize,
+      currentSize: iconSize,
+    };
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setResizing(true);
+  }, [iconSize, menu, mouseAxis, vertical]);
+
+  const moveResize = useCallback((e: PointerEvent<HTMLButtonElement>) => {
+    const drag = resizeRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    const delta = (vertical ? e.screenY : e.screenX) - drag.startAxis;
+    const slots = Math.max(items.length, 1);
+    const next = Math.max(MIN_ICON_SIZE, Math.min(MAX_ICON_SIZE,
+      Math.round((drag.startSize + delta * 2 / slots) / 2) * 2));
+    if (next === drag.currentSize) return;
+    drag.currentSize = next;
+    setResizeSize(next);
+  }, [items.length, vertical]);
+
+  const finishResize = useCallback((e: PointerEvent<HTMLButtonElement>) => {
+    const drag = resizeRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    resizeRef.current = null;
+    setResizing(false);
+    if (e.type === "pointercancel") {
+      setResizeSize(null);
+    } else {
+      void saveIconSize(drag.currentSize);
+    }
+  }, [saveIconSize]);
 
   const slideOut = vertical
     ? { x: edge === "left" ? "-118%" : "118%", y: 0 }
@@ -275,6 +324,7 @@ export function DockBar({ settings, items, onLaunch }: DockBarProps) {
       className="dock-viewport"
       data-edge={edge}
       data-asleep={asleep}
+      style={{ "--icon-size": `${iconSize}px` } as CSSProperties}
       onMouseEnter={() => setPointerInside(true)}
       onMouseLeave={() => setPointerInside(false)}
     >
@@ -348,11 +398,41 @@ export function DockBar({ settings, items, onLaunch }: DockBarProps) {
             onClick={() => ipc.openSettings().catch(notify.on("Could not open settings"))}
           />
         )}
+        <button
+          className="dock-resize-handle"
+          type="button"
+          aria-label="도크 크기 조절"
+          title="드래그해서 도크 크기 조절"
+          onPointerDown={startResize}
+          onPointerMove={moveResize}
+          onPointerUp={finishResize}
+          onPointerCancel={finishResize}
+          onLostPointerCapture={finishResize}
+          onKeyDown={(e) => {
+            if (e.key === "Escape" && resizeRef.current) {
+              e.preventDefault();
+              const pointerId = resizeRef.current.pointerId;
+              resizeRef.current = null;
+              setResizing(false);
+              setResizeSize(null);
+              if (e.currentTarget.hasPointerCapture(pointerId)) e.currentTarget.releasePointerCapture(pointerId);
+              return;
+            }
+            if (e.key !== "ArrowRight" && e.key !== "ArrowUp" &&
+                e.key !== "ArrowLeft" && e.key !== "ArrowDown") return;
+            e.preventDefault();
+            const direction = e.key === "ArrowRight" || e.key === "ArrowUp" ? 1 : -1;
+            void saveIconSize(Math.max(MIN_ICON_SIZE, Math.min(MAX_ICON_SIZE, iconSize + direction * 2)));
+          }}
+        >
+          <svg viewBox="0 0 20 20" aria-hidden="true">
+            <path d="M8 15.5 15.5 8M12 15.5l3.5-3.5" />
+          </svg>
+        </button>
       </motion.div>
       <ContextMenu settings={settings} edge={edge} />
       <FolderFlyout edge={edge} />
       <StackFlyout edge={edge} />
-      <WindowsFlyout edge={edge} />
       <SearchOverlay edge={edge} />
       <Toasts edge={edge} />
       <AnimatePresence>{welcomeOpen && <Welcome edge={edge} />}</AnimatePresence>

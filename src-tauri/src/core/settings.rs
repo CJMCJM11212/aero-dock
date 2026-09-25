@@ -310,7 +310,7 @@ impl Settings {
         a.particle_density = a.particle_density.clamp(0.0, 1.0);
         a.animation_speed = a.animation_speed.clamp(0.5, 2.0);
         let d = &mut self.dock;
-        d.icon_size = d.icon_size.clamp(24, 96);
+        d.icon_size = d.icon_size.clamp(24, 128);
         d.magnification_scale = d.magnification_scale.clamp(1.0, 2.0);
         d.floating_margin = d.floating_margin.min(64);
         // below ~200ms the dock hides while you are still reaching for it
@@ -577,7 +577,7 @@ mod tests {
         s.sanitize();
         assert_eq!(s.appearance.transparency, 0.3);
         assert_eq!(s.appearance.animation_speed, 2.0);
-        assert_eq!(s.dock.icon_size, 96);
+        assert_eq!(s.dock.icon_size, 128);
         assert_eq!(s.dock.magnification_scale, 2.0);
         assert_eq!(s.dock.auto_hide_delay_ms, 200);
     }

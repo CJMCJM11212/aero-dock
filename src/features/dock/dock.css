@@ -375,14 +375,49 @@
 /* ZEUSLAP icon shelf: quiet blue material, square app tiles, no ambient glare. */
 :root[data-window="dock"] .dock-bar.glass.glass-open {
   --icon-gap: 18px;
-  --dock-pad-x: 18px;
+  --dock-pad-x: 30px;
   --dock-pad-y: 18px;
   --glass-radius: 34px;
   padding-bottom: 21px;
   opacity: 1;
   background: linear-gradient(165deg, rgba(69, 109, 179, 0.73), rgba(28, 61, 124, 0.77));
   border: 1px solid rgba(235, 246, 255, 0.14);
-  box-shadow: 0 12px 30px rgba(0, 15, 51, 0.22), inset 0 1px rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.12), inset 0 -1px rgba(0, 19, 53, 0.12);
+}
+
+:root[data-window="dock"] .dock-resize-handle {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  z-index: 20;
+  width: 27px;
+  height: 27px;
+  display: grid;
+  place-items: center;
+  color: rgba(242, 249, 255, 0.68);
+  background: transparent;
+  border: 0;
+  border-radius: 10px;
+  cursor: ew-resize;
+  touch-action: none;
+  opacity: 0.65;
+  transition: opacity 90ms ease-out, background-color 90ms ease-out;
+}
+
+:root[data-window="dock"] .dock-resize-handle:hover,
+:root[data-window="dock"] .dock-resize-handle:focus-visible {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.11);
+  outline: none;
+}
+
+:root[data-window="dock"] .dock-resize-handle svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
 }
 
 :root[data-window="dock"] .dock-bar.glass::before,

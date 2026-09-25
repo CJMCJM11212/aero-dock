@@ -6,7 +6,7 @@
 
 export const springs = {
   /** Icon magnification following the cursor. */
-  magnify: { mass: 0.08, stiffness: 1000, damping: 19 },
+  magnify: { mass: 0.06, stiffness: 1500, damping: 22 },
   /** Launch bounce: playful but quick to settle. */
   bounce: { type: "spring", stiffness: 320, damping: 13, mass: 0.6 } as const,
   /** Drag: icons feel like they're suspended in water. */
