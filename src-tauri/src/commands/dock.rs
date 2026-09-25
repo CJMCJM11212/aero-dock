@@ -5,8 +5,8 @@
 
 use parking_lot::Mutex;
 use tauri::{AppHandle, Manager};
-use windows::Win32::Foundation::HWND;
-use windows::Win32::UI::WindowsAndMessaging::{SetWindowPos, SWP_NOACTIVATE, SWP_NOZORDER};
+use windows::Win32::Foundation::{HWND, RECT};
+use windows::Win32::UI::WindowsAndMessaging::{GetWindowRect, SetWindowPos, SWP_NOACTIVATE, SWP_NOZORDER};
 
 use crate::core::settings::{DockEdge, DockPosition, SettingsStore};
 use crate::core::{AeroError, AeroResult};
@@ -148,11 +148,15 @@ fn capture_dock_position(app: &AppHandle) -> AeroResult<DockPosition> {
     let monitor = pick_monitor(&monitors, selected.as_deref());
     let window = app.get_webview_window("dock")
         .ok_or_else(|| AeroError::other("dock window missing"))?;
-    let pos = window.outer_position()?;
-    let size = window.outer_size()?;
+    // Use the same native rect that the ZEUSLAP guard observes. Tauri's
+    // outer_size includes an extra invisible frame on this WebView2 window,
+    // which shifted a saved bottom anchor by about 75 physical pixels.
+    let hwnd = window.hwnd()?;
+    let mut rect = RECT::default();
+    unsafe { GetWindowRect(HWND(hwnd.0), &mut rect)?; }
     let position = DockPosition {
-        center_x: ((pos.x as f64 + size.width as f64 / 2.0 - monitor.bounds.x as f64) / monitor.scale).round() as i32,
-        bottom_y: ((pos.y as f64 + size.height as f64 - monitor.bounds.y as f64) / monitor.scale).round() as i32,
+        center_x: (((rect.left as f64 + rect.right as f64) / 2.0 - monitor.bounds.x as f64) / monitor.scale).round() as i32,
+        bottom_y: ((rect.bottom as f64 - monitor.bounds.y as f64) / monitor.scale).round() as i32,
     };
     settings.update(app, |s| s.dock.position = Some(position))?;
     Ok(position)
