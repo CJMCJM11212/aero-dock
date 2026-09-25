@@ -24,6 +24,10 @@ export const ipc = {
   // settings
   getSettings: () => invoke<Settings>("get_settings"),
   setSettings: (settings: Settings) => invoke<Settings>("set_settings", { settings }),
+  beginDockMove: () => invoke<void>("begin_dock_move"),
+  finishDockMove: () => invoke<boolean>("finish_dock_move"),
+  nudgeDock: (dx: number, dy: number) => invoke<void>("nudge_dock", { dx, dy }),
+  resetDockPosition: () => invoke<void>("reset_dock_position"),
   pinItem: (item: PinnedItem, index?: number) =>
     invoke<Settings>("pin_item", { item, index: index ?? null }),
   unpinItem: (id: string) => invoke<Settings>("unpin_item", { id }),

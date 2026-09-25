@@ -9,6 +9,8 @@ export type DockEdge = "top" | "bottom" | "left" | "right";
 export interface DockSettings {
   edge: DockEdge;
   monitor: string | null;
+  position: { centerX: number; bottomY: number } | null;
+  useMonitorBounds: boolean;
   iconSize: number;
   magnification: boolean;
   magnificationScale: number;

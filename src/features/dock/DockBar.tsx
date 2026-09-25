@@ -6,6 +6,7 @@
  */
 
 import { AnimatePresence, motion, Reorder, useMotionValue } from "motion/react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from "react";
 import { springs } from "../../engine/animation/springs";
 import { ipc } from "../../ipc/commands";
@@ -57,6 +58,8 @@ export function DockBar({ settings, items, onLaunch }: DockBarProps) {
   const { edge, magnification, magnificationScale } = settings.dock;
   const [resizeSize, setResizeSize] = useState<number | null>(null);
   const [resizing, setResizing] = useState(false);
+  const [moving, setMoving] = useState(false);
+  const movingRef = useRef(false);
   const resizeRef = useRef<{ pointerId: number; startAxis: number; startSize: number; currentSize: number } | null>(null);
   const iconSize = resizeSize ?? settings.dock.iconSize;
   const vertical = edge === "left" || edge === "right";
@@ -111,13 +114,13 @@ export function DockBar({ settings, items, onLaunch }: DockBarProps) {
   const sleepTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => {
     clearTimeout(sleepTimer.current);
-    if (pointerInside || menuOpen || fileDragOver || resizing) {
+    if (pointerInside || menuOpen || fileDragOver || resizing || moving) {
       setAsleep(false);
       return;
     }
     sleepTimer.current = setTimeout(() => setAsleep(true), SLEEP_AFTER_MS);
     return () => clearTimeout(sleepTimer.current);
-  }, [pointerInside, menuOpen, fileDragOver, resizing, setAsleep]);
+  }, [pointerInside, menuOpen, fileDragOver, resizing, moving, setAsleep]);
 
   // Asleep is also when the dock hands memory back. Chromium keeps its
   // raster caches until told otherwise; on a real desktop this took the
@@ -137,7 +140,7 @@ export function DockBar({ settings, items, onLaunch }: DockBarProps) {
       setWindowShrunk(false);
       return;
     }
-    if (pointerInside || menuOpen || fileDragOver || resizing) {
+    if (pointerInside || menuOpen || fileDragOver || resizing || moving) {
       setHidden(false);
       setWindowShrunk(false);
       return;
@@ -151,15 +154,19 @@ export function DockBar({ settings, items, onLaunch }: DockBarProps) {
       clearTimeout(hideTimer.current);
       clearTimeout(shrinkTimer.current);
     };
-  }, [autoHide, pointerInside, menuOpen, fileDragOver, resizing, autoHideDelay]);
+  }, [autoHide, pointerInside, menuOpen, fileDragOver, resizing, moving, autoHideDelay]);
 
   // Deterministic window size: no ResizeObserver, no feedback loops.
+  // Reserve the largest footprint once when a corner drag begins. Icon size
+  // then changes entirely inside that window, without OS resize/recenter on
+  // every pointer event. The actual footprint is restored on release.
+  const layoutIconSize = resizing ? MAX_ICON_SIZE : iconSize;
   const windowSize = useMemo(() => {
     const n = Math.max(items.length, 1);
     const dividers = runningItems.length > 0 && pinnedItems.length > 0 ? 1 : 0;
-    const mainBase = n * iconSize + (n - 1 + dividers) * GAP + dividers * 8 + PAD_MAIN * 2;
+    const mainBase = n * layoutIconSize + (n - 1 + dividers) * GAP + dividers * 8 + PAD_MAIN * 2;
     // neighbors near the cursor grow too; ~2.5 icons' worth covers the worst case
-    const mainGrowth = iconSize * (peak - 1) * 2.5;
+    const mainGrowth = layoutIconSize * (peak - 1) * 2.5;
     const auxiliarySpace =
       (settings.dock.showSearchButton ? 48 : 0) +
       (settings.dock.showSettingsButton ? 48 : 0) +
@@ -169,7 +176,7 @@ export function DockBar({ settings, items, onLaunch }: DockBarProps) {
       (modesOn ? MODE_TILE_SPACE : 0);
     const label = vertical ? LABEL_SPACE_SIDE : LABEL_SPACE;
     // The dock band itself: icons at full magnification plus tooltip room.
-    const band = iconSize * peak + PAD_CROSS * 2 + label;
+    const band = layoutIconSize * peak + PAD_CROSS * 2 + label;
     // Open surfaces are taller than the band. Each reports the total cross
     // size it needs, and the window takes the largest. The search overlay
     // is measured from its own geometry rather than a shared guess, because
@@ -180,7 +187,7 @@ export function DockBar({ settings, items, onLaunch }: DockBarProps) {
       // the mode flyout is taller than the tooltip band it hangs off
       modesOpen ? band + MODE_FLYOUT_HEIGHT + FLYOUT_GAP : 0,
       searchOpen
-        ? SEARCH_PANEL.offsetFor(iconSize) + SEARCH_PANEL.height + FLYOUT_GAP
+        ? SEARCH_PANEL.offsetFor(layoutIconSize) + SEARCH_PANEL.height + FLYOUT_GAP
         : 0,
       toastCount > 0 ? band + TOAST_SPACE : 0,
     );
@@ -189,7 +196,7 @@ export function DockBar({ settings, items, onLaunch }: DockBarProps) {
   }, [
     items.length,
     runningItems.length,
-    iconSize,
+    layoutIconSize,
     peak,
     vertical,
     menu.item,
@@ -254,7 +261,7 @@ export function DockBar({ settings, items, onLaunch }: DockBarProps) {
     magScale: magnificationScale,
     vertical,
     edge,
-    dragging: dragging || resizing,
+    dragging: dragging || resizing || moving,
     onLaunch: launchGuarded,
     onContext: openMenu,
   };
@@ -314,6 +321,35 @@ export function DockBar({ settings, items, onLaunch }: DockBarProps) {
       void saveIconSize(drag.currentSize);
     }
   }, [saveIconSize]);
+
+  const startMove = useCallback((e: PointerEvent<HTMLButtonElement>) => {
+    if (e.button !== 0 || movingRef.current || resizeRef.current || draggingRef.current) return;
+    e.preventDefault();
+    e.stopPropagation();
+    menu.close();
+    mouseAxis.set(Infinity);
+    movingRef.current = true;
+    setMoving(true);
+    void (async () => {
+      try {
+        // Persist the current location first so the ZEUSLAP taskbar guard
+        // stops correcting the window while Windows owns the native drag.
+        await ipc.beginDockMove();
+        await getCurrentWindow().startDragging();
+        let saved = false;
+        for (let attempt = 0; attempt < 300 && !saved; attempt++) {
+          await new Promise((resolve) => setTimeout(resolve, 60));
+          saved = await ipc.finishDockMove();
+        }
+        if (!saved) throw new Error("Dock move did not finish");
+      } catch (error) {
+        notify.error("Could not move dock", error);
+      } finally {
+        movingRef.current = false;
+        setMoving(false);
+      }
+    })();
+  }, [menu, mouseAxis]);
 
   const slideOut = vertical
     ? { x: edge === "left" ? "-118%" : "118%", y: 0 }
@@ -398,6 +434,32 @@ export function DockBar({ settings, items, onLaunch }: DockBarProps) {
             onClick={() => ipc.openSettings().catch(notify.on("Could not open settings"))}
           />
         )}
+        <button
+          className="dock-move-handle"
+          type="button"
+          aria-label="도크 위치 이동"
+          title="드래그해서 위치 이동 · 방향키로 미세 조절 · Home으로 원위치"
+          data-moving={moving}
+          onPointerDown={startMove}
+          onKeyDown={(e) => {
+            const step = e.shiftKey ? 20 : 10;
+            const delta = {
+              ArrowLeft: [-step, 0], ArrowRight: [step, 0],
+              ArrowUp: [0, -step], ArrowDown: [0, step],
+            }[e.key];
+            if (delta) {
+              e.preventDefault();
+              ipc.nudgeDock(delta[0], delta[1]).catch(notify.on("Could not move dock"));
+            } else if (e.key === "Home") {
+              e.preventDefault();
+              ipc.resetDockPosition().catch(notify.on("Could not reset dock position"));
+            }
+          }}
+        >
+          <svg viewBox="0 0 20 20" aria-hidden="true">
+            <path d="M10 3.5v13M3.5 10h13M7.5 6 10 3.5 12.5 6M7.5 14 10 16.5l2.5-2.5M6 7.5 3.5 10 6 12.5M14 7.5l2.5 2.5-2.5 2.5" />
+          </svg>
+        </button>
         <button
           className="dock-resize-handle"
           type="button"

@@ -34,6 +34,10 @@ pub struct DockSettings {
     pub edge: DockEdge,
     /// Monitor name (as reported by the OS); `None` = primary.
     pub monitor: Option<String>,
+    /// A user-placed dock, stored relative to the selected monitor in logical pixels.
+    pub position: Option<DockPosition>,
+    /// Use the monitor's full bounds when an external guard hides its taskbar.
+    pub use_monitor_bounds: bool,
     /// Base icon size in logical pixels.
     pub icon_size: u32,
     /// Cursor-proximity magnification on hover.
@@ -64,6 +68,8 @@ impl Default for DockSettings {
         Self {
             edge: DockEdge::Bottom,
             monitor: None,
+            position: None,
+            use_monitor_bounds: false,
             icon_size: 48,
             magnification: true,
             magnification_scale: 1.45,
@@ -78,6 +84,15 @@ impl Default for DockSettings {
             show_system_status: true,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DockPosition {
+    /// Horizontal center of the window, relative to the monitor's left edge.
+    pub center_x: i32,
+    /// Bottom of the window, relative to the monitor's top edge.
+    pub bottom_y: i32,
 }
 
 /// How a surface is rendered.
@@ -310,6 +325,10 @@ impl Settings {
         a.particle_density = a.particle_density.clamp(0.0, 1.0);
         a.animation_speed = a.animation_speed.clamp(0.5, 2.0);
         let d = &mut self.dock;
+        if let Some(position) = &mut d.position {
+            position.center_x = position.center_x.clamp(-32_768, 32_768);
+            position.bottom_y = position.bottom_y.clamp(-32_768, 32_768);
+        }
         d.icon_size = d.icon_size.clamp(24, 128);
         d.magnification_scale = d.magnification_scale.clamp(1.0, 2.0);
         d.floating_margin = d.floating_margin.min(64);
