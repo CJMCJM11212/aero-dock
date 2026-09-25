@@ -15,6 +15,8 @@ use crate::platform::windows::media::{self, MediaAction, MediaInfo};
 use crate::platform::windows::monitors::{enumerate_monitors, pick_monitor, MonitorInfoEx, Rect};
 use crate::platform::windows::system::{self, MicrophoneStatus, VolumeStatus};
 
+const MIN_MEDIA_HEIGHT: f64 = 126.0;
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MediaStatus {
@@ -124,8 +126,8 @@ pub fn position_media(app: &AppHandle) -> AeroResult<()> {
             .is_some_and(|dock_monitor| dock_monitor.name == monitor.name))
         .map(|(h, _)| unsafe { GetDpiForWindow(h) } as f64 / 96.0)
         .unwrap_or(monitor.scale);
-    let default_width = (800.0 * scale).round() as i32;
-    let default_height = (270.0 * scale).round() as i32;
+    let default_width = (640.0 * scale).round() as i32;
+    let default_height = (MIN_MEDIA_HEIGHT * scale).round() as i32;
     let initial = if let Some(rect) = saved { rect } else {
         // Center the card in the area above the bottom dock. The dock's native
         // window includes a large transparent overlay region, so its top edge
@@ -136,7 +138,7 @@ pub fn position_media(app: &AppHandle) -> AeroResult<()> {
         SavedRect { x, y, width: default_width, height: default_height }
     };
     let rect = keep_on_monitor(initial, monitor.bounds,
-        (520.0 * scale).round() as i32, (250.0 * scale).round() as i32);
+        (520.0 * scale).round() as i32, (MIN_MEDIA_HEIGHT * scale).round() as i32);
     apply_rect(hwnd, rect)?;
     // A window created on another DPI can acquire a different scale once it
     // reaches this monitor. It is hidden here, so correct the physical minimum
@@ -144,8 +146,8 @@ pub fn position_media(app: &AppHandle) -> AeroResult<()> {
     let actual_scale = unsafe { GetDpiForWindow(hwnd) } as f64 / 96.0;
     if actual_scale > scale + 0.01 {
         let corrected = if saved.is_some() { rect } else {
-            let width = (800.0 * actual_scale).round() as i32;
-            let height = (270.0 * actual_scale).round() as i32;
+            let width = (640.0 * actual_scale).round() as i32;
+            let height = (MIN_MEDIA_HEIGHT * actual_scale).round() as i32;
             SavedRect {
                 x: rect.x + (rect.width - width) / 2,
                 y: rect.y + (rect.height - height) / 2,
@@ -154,7 +156,7 @@ pub fn position_media(app: &AppHandle) -> AeroResult<()> {
         };
         let corrected = keep_on_monitor(corrected, monitor.bounds,
             (520.0 * actual_scale).round() as i32,
-            (250.0 * actual_scale).round() as i32);
+            (MIN_MEDIA_HEIGHT * actual_scale).round() as i32);
         apply_rect(hwnd, corrected)?;
     }
     Ok(())
@@ -193,7 +195,7 @@ pub fn update_media_gesture(app: AppHandle, dx: f64, dy: f64) -> AeroResult<()> 
     };
     let bounds = g.monitor.bounds;
     let min_w = (520.0 * g.scale).round() as i32;
-    let min_h = (250.0 * g.scale).round() as i32;
+    let min_h = (MIN_MEDIA_HEIGHT * g.scale).round() as i32;
     let rect = if g.kind == GestureKind::Resize {
         let max_w = (bounds.x + bounds.width - initial.x).max(min_w.min(bounds.width));
         let max_h = (bounds.y + bounds.height - initial.y).max(min_h.min(bounds.height));
